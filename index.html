@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>เกมแผนที่ตรรกศาสตร์ - สุ่มบทบาทผู้ถาม/ผู้ตอบ</title>
     <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
     <style>
@@ -17,6 +17,10 @@
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
+            /* ป้องกันการคลุมดำและซูมหน้าจอโดยไม่ตั้งใจบนมือถือ */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
         #loginOverlay {
             position: fixed;
@@ -128,6 +132,11 @@
             border-radius: 10px;
             font-weight: bold;
             cursor: pointer;
+            /* ป้องกันการคลุมดำและไฮไลต์ข้อความบนปุ่ม */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
         }
         .d-btn:active { background: #00bcd4; color: #121212; }
         
@@ -227,11 +236,11 @@
         
         <div id="mobileControls">
             <div></div>
-            <button class="d-btn" ontouchstart="setKey('ArrowUp', true)" ontouchend="setKey('ArrowUp', false)" onmousedown="setKey('ArrowUp', true)" onmouseup="setKey('ArrowUp', false)">⬆️</button>
+            <button class="d-btn" ontouchstart="setKey('ArrowUp', true); event.preventDefault();" ontouchend="setKey('ArrowUp', false); event.preventDefault();" onmousedown="setKey('ArrowUp', true)" onmouseup="setKey('ArrowUp', false)">⬆️</button>
             <div></div>
-            <button class="d-btn" ontouchstart="setKey('ArrowLeft', true)" ontouchend="setKey('ArrowLeft', false)" onmousedown="setKey('ArrowLeft', true)" onmouseup="setKey('ArrowLeft', false)">⬅️</button>
-            <button class="d-btn" ontouchstart="setKey('ArrowDown', true)" ontouchend="setKey('ArrowDown', false)" onmousedown="setKey('ArrowDown', true)" onmouseup="setKey('ArrowDown', false)">⬇️</button>
-            <button class="d-btn" ontouchstart="setKey('ArrowRight', true)" ontouchend="setKey('ArrowRight', false)" onmousedown="setKey('ArrowRight', true)" onmouseup="setKey('ArrowRight', false)">➡️</button>
+            <button class="d-btn" ontouchstart="setKey('ArrowLeft', true); event.preventDefault();" ontouchend="setKey('ArrowLeft', false); event.preventDefault();" onmousedown="setKey('ArrowLeft', true)" onmouseup="setKey('ArrowLeft', false)">⬅️</button>
+            <button class="d-btn" ontouchstart="setKey('ArrowDown', true); event.preventDefault();" ontouchend="setKey('ArrowDown', false); event.preventDefault();" onmousedown="setKey('ArrowDown', true)" onmouseup="setKey('ArrowDown', false)">⬇️</button>
+            <button class="d-btn" ontouchstart="setKey('ArrowRight', true); event.preventDefault();" ontouchend="setKey('ArrowRight', false); event.preventDefault();" onmousedown="setKey('ArrowRight', true)" onmouseup="setKey('ArrowRight', false)">➡️</button>
         </div>
     </div>
 
@@ -283,8 +292,8 @@
         const speed = 3;
 
         let peer = null;
-        let connections = {}; // เก็บการเชื่อมต่อทั้งหมดแบบ Multi-peer
-        let hostConnection = null; // สำหรับ Client ใช้ติดต่อ Host
+        let connections = {}; 
+        let hostConnection = null; 
         let isHost = false;
         let activeRoomId = '';
         let playersData = {};
@@ -294,7 +303,7 @@
         let currentOpponentId = null;
         let currentQuiz = null;
         let receivedQuizBackup = null;
-        let collisionCooldown = false;
+        let globalCollisionCooldown = false;
 
         function toggleRoomInput() {
             const mode = document.getElementById('roomMode').value;
@@ -420,14 +429,12 @@
 
         function broadcastData(data) {
             if (isHost) {
-                // Host ส่งข้อมูลกระจายให้ทุกคน
                 for (let peerId in connections) {
                     if (connections[peerId].open) {
                         connections[peerId].send(data);
                     }
                 }
             } else {
-                // Client ส่งให้ Host คนเดียว (ให้ Host ช่วยกระจายต่อ)
                 if (hostConnection && hostConnection.open) {
                     hostConnection.send(data);
                 }
@@ -445,23 +452,14 @@
         function handleNetworkData(data, conn) {
             if (data.type === 'UPDATE_POS') {
                 playersData[data.id] = { x: data.x, y: data.y, color: data.color, score: data.score };
+                
                 if (isHost) {
-                    // Host ทำหน้าที่กระจายตำแหน่งของผู้เล่นคนนี้ต่อไปยังผู้เล่นคนอื่นๆ ในห้อง
                     for (let peerId in connections) {
                         if (peerId !== data.id && connections[peerId].open) {
                             connections[peerId].send(data);
                         }
                     }
-                }
-            } else if (data.type === 'PROPOSE_BATTLE') {
-                if (isHost) {
-                    let participants = [data.sender, data.target];
-                    let creator = participants[Math.floor(Math.random() * participants.length)];
-                    let responder = participants.find(id => id !== creator);
-
-                    let battlePayload = { type: 'START_BATTLE_ASSIGNED', creator, responder };
-                    broadcastData(battlePayload);
-                    triggerAssignedBattle(creator, responder, null);
+                    checkHostCollisions();
                 }
             } else if (data.type === 'START_BATTLE_ASSIGNED') {
                 triggerAssignedBattle(data.creator, data.responder, null);
@@ -472,7 +470,6 @@
                     triggerBattleAsResponder(data.creator, data.quiz);
                     document.getElementById('emergencyBtn').style.display = 'inline-block';
                 } else if (isHost) {
-                    // ส่งต่อโจทย์ไปยังผู้รับที่ถูกต้องกรณีเป็น Host ช่วยส่งต่อ
                     sendDataTo(data.responder, data);
                 }
             } else if (data.type === 'ANSWER_BATTLE') {
@@ -488,6 +485,35 @@
             }
         }
 
+        function checkHostCollisions() {
+            if (globalCollisionCooldown || inBattle) return;
+
+            let playerIds = Object.keys(playersData);
+            for (let i = 0; i < playerIds.length; i++) {
+                for (let j = i + 1; j < playerIds.length; j++) {
+                    let id1 = playerIds[i];
+                    let id2 = playerIds[j];
+                    let p1 = playersData[id1];
+                    let p2 = playersData[id2];
+
+                    let dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                    if (dist < 35) {
+                        globalCollisionCooldown = true;
+                        setTimeout(() => { globalCollisionCooldown = false; }, 4000);
+
+                        let participants = [id1, id2];
+                        let creator = participants[Math.floor(Math.random() * participants.length)];
+                        let responder = participants.find(user => user !== creator);
+
+                        let payload = { type: 'START_BATTLE_ASSIGNED', creator, responder };
+                        broadcastData(payload);
+                        triggerAssignedBattle(creator, responder, null);
+                        return;
+                    }
+                }
+            }
+        }
+
         function update() {
             if (inBattle) return;
 
@@ -500,31 +526,9 @@
             if (moved) {
                 playersData[myId] = { x: myX, y: myY, color: myColor, score: myScore };
                 broadcastData({ type: 'UPDATE_POS', id: myId, x: myX, y: myY, color: myColor, score: myScore });
-            }
-
-            if (!collisionCooldown) {
-                for (let id in playersData) {
-                    if (id !== myId) {
-                        let p = playersData[id];
-                        let dist = Math.hypot(myX - p.x, myY - p.y);
-                        if (dist < 35 && !inBattle) {
-                            currentOpponentId = id;
-                            collisionCooldown = true;
-                            setTimeout(() => { collisionCooldown = false; }, 3000);
-
-                            if (isHost) {
-                                let participants = [myId, id];
-                                let creator = participants[Math.floor(Math.random() * participants.length)];
-                                let responder = participants.find(user => user !== creator);
-                                let payload = { type: 'START_BATTLE_ASSIGNED', creator, responder };
-                                broadcastData(payload);
-                                triggerAssignedBattle(creator, responder, null);
-                            } else {
-                                broadcastData({ type: 'PROPOSE_BATTLE', sender: myId, target: id });
-                            }
-                            break;
-                        }
-                    }
+                
+                if (isHost) {
+                    checkHostCollisions();
                 }
             }
 
@@ -539,10 +543,12 @@
             document.getElementById('responderSection').style.display = 'none';
 
             if (myId === creator) {
+                currentOpponentId = responder;
                 document.getElementById('panelTitle').innerText = '🎲 (สุ่มสำเร็จ) คุณคือ "ผู้สร้างโจทย์"';
                 document.getElementById('creatorSection').style.display = 'block';
                 document.getElementById('battleStatus').innerText = `สุ่มได้คุณเป็นผู้สร้างโจทย์ให้ ${responder} ตอบ`;
             } else if (myId === responder) {
+                currentOpponentId = creator;
                 document.getElementById('panelTitle').innerText = '🎲 (สุ่มสำเร็จ) คุณคือ "ผู้ตอบโจทย์"';
                 document.getElementById('responderSection').style.display = 'block';
                 document.getElementById('displayQuiz').innerText = quizData ? formatQuizText(quizData) : '⏳ กำลังรอโจทย์จากผู้สร้าง...';
