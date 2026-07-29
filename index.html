@@ -17,7 +17,6 @@
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
-            /* ป้องกันการคลุมดำและซูมหน้าจอโดยไม่ตั้งใจบนมือถือ */
             -webkit-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
@@ -132,7 +131,6 @@
             border-radius: 10px;
             font-weight: bold;
             cursor: pointer;
-            /* ป้องกันการคลุมดำและไฮไลต์ข้อความบนปุ่ม */
             -webkit-user-select: none;
             user-select: none;
             -webkit-touch-callout: none;
@@ -402,7 +400,7 @@
             setupConnectionEvents(conn);
             
             setTimeout(() => {
-                if (!hostConnection && document.getElementById('loginOverlay').style.display !== 'none') {
+                if (!hostConnection && document.getElementById('loginOverlay'].style.display !== 'none') {
                     document.getElementById('connectionStatus').innerText = 'เชื่อมต่อห้องไม่สำเร็จ (ตรวจดูว่า Host เปิดห้องอยู่หรือไม่)';
                 }
             }, 6000);
@@ -442,10 +440,14 @@
         }
 
         function sendDataTo(targetId, data) {
-            if (connections[targetId] && connections[targetId].open) {
-                connections[targetId].send(data);
-            } else if (hostConnection && hostConnection.open) {
-                hostConnection.send(data);
+            if (isHost) {
+                if (connections[targetId] && connections[targetId].open) {
+                    connections[targetId].send(data);
+                }
+            } else {
+                if (hostConnection && hostConnection.open) {
+                    hostConnection.send(data);
+                }
             }
         }
 
@@ -463,6 +465,13 @@
                 }
             } else if (data.type === 'START_BATTLE_ASSIGNED') {
                 triggerAssignedBattle(data.creator, data.responder, null);
+                if (isHost) {
+                    for (let peerId in connections) {
+                        if (connections[peerId].open) {
+                            connections[peerId].send(data);
+                        }
+                    }
+                }
             } else if (data.type === 'SEND_QUIZ') {
                 if (data.responder === myId) {
                     receivedQuizBackup = data.quiz;
@@ -470,6 +479,7 @@
                     triggerBattleAsResponder(data.creator, data.quiz);
                     document.getElementById('emergencyBtn').style.display = 'inline-block';
                 } else if (isHost) {
+                    // Host ทำหน้าที่ส่งต่อโจทย์ไปยังผู้รับปลายทางให้ถูกต้อง
                     sendDataTo(data.responder, data);
                 }
             } else if (data.type === 'ANSWER_BATTLE') {
