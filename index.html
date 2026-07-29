@@ -328,10 +328,17 @@
             const mode = document.getElementById('roomMode').value;
             isHost = (mode === 'create');
 
+            // ใช้ค่าคอนฟิกที่รองรับการเชื่อมต่อที่เสถียรขึ้น
             const peerOptions = {
                 host: '0.peerjs.com',
                 port: 443,
                 secure: true,
+                config: {
+                    'iceServers': [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:global.stun.twilio.com:3478' }
+                    ]
+                },
                 debug: 1
             };
 
@@ -346,10 +353,12 @@
                 });
 
                 peer.on('error', (err) => {
+                    console.error(err);
                     if (err.type === 'unavailable-id') {
+                        // สุ่มใหม่ทันทีหากรหัสซ้ำ
                         initConnection();
                     } else {
-                        document.getElementById('connectionStatus').innerText = 'สร้างห้องไม่สำเร็จ: ' + err.type;
+                        document.getElementById('connectionStatus').innerText = 'สร้างห้องไม่สำเร็จ: ' + err.type + ' (ลองใหม่อีกครั้ง)';
                     }
                 });
             } else {
@@ -369,6 +378,7 @@
                 });
 
                 peer.on('error', (err) => {
+                    console.error(err);
                     document.getElementById('connectionStatus').innerText = 'ไม่พบห้องหรือรหัสห้องไม่ถูกต้อง';
                 });
             }
@@ -395,12 +405,12 @@
         }
 
         function connectToHost(targetHostId) {
-            let conn = peer.connect(targetHostId);
+            let conn = peer.connect(targetHostId, { reliable: true });
             hostConnection = conn;
             setupConnectionEvents(conn);
             
             setTimeout(() => {
-                if (!hostConnection && document.getElementById('loginOverlay'].style.display !== 'none') {
+                if (!hostConnection || !hostConnection.open) {
                     document.getElementById('connectionStatus').innerText = 'เชื่อมต่อห้องไม่สำเร็จ (ตรวจดูว่า Host เปิดห้องอยู่หรือไม่)';
                 }
             }, 6000);
@@ -479,7 +489,6 @@
                     triggerBattleAsResponder(data.creator, data.quiz);
                     document.getElementById('emergencyBtn').style.display = 'inline-block';
                 } else if (isHost) {
-                    // Host ทำหน้าที่ส่งต่อโจทย์ไปยังผู้รับปลายทางให้ถูกต้อง
                     sendDataTo(data.responder, data);
                 }
             } else if (data.type === 'ANSWER_BATTLE') {
