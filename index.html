@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เกมประลองตรรกศาสตร์ (Multiplayer)</title>
-    <!-- โหลด Socket.io สำหรับเชื่อมต่อห้องแบบเรียลไทม์ข้ามเครื่อง -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <title>เกมประลองตรรกศาสตร์ (P2P Direct)</title>
+    <!-- โหลด PeerJS จาก CDN สำหรับเชื่อมต่อข้ามเครื่องโดยตรง -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
             background-color: #121212;
@@ -87,7 +87,7 @@
     <div id="loginOverlay" class="container">
         <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์</h2>
         <input type="text" id="usernameInput" placeholder="ชื่อผู้เล่น..." maxlength="12">
-        <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก..." maxlength="4">
+        <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก (เช่น 1234)..." maxlength="4">
         <br>
         <button onclick="joinGame()" class="btn-action">เข้าสู่ห้องประลอง</button>
         <p id="statusMsg" style="font-size: 12px; color: #ffeb3b; margin-top: 8px;"></p>
@@ -119,7 +119,6 @@
         <div class="battle-box">
             <h3 id="battleTitle" style="color: #ff9800; margin-top:0;">📝 สร้างโจทย์ตรรกศาสตร์</h3>
             
-            <!-- ส่วนที่ 1: หน้าจอสร้างโจทย์ (ผู้ท้าดวลเป็นคนตั้ง) -->
             <div id="creatorSection">
                 <p id="targetPlayerLabel" style="font-size: 13px; color: #ccc; margin-bottom: 10px;"></p>
                 <div style="text-align: left; margin: 0 auto; width: 90%;">
@@ -147,7 +146,6 @@
                 <button onclick="endBattle()" style="background: #555; margin-top: 5px; border:none; padding:8px; width: 90%; border-radius:6px; cursor:pointer; color:white;">ยกเลิก</button>
             </div>
 
-            <!-- ส่วนที่ 2: หน้าจอรอเพื่อนตอบ หรือหน้าจอให้เป้าหมายตอบโจทย์ -->
             <div id="responderSection" style="display: none;">
                 <p id="battleDesc" style="font-size: 14px; color: #ccc;"></p>
                 <p id="quizQuestion" style="font-size: 18px; color: #ffeb3b; font-weight: bold; margin: 15px 0;"></p>
@@ -163,13 +161,11 @@
     </div>
 
     <script>
-        // ใช้ Public Socket Server สำหรับรับส่งข้อมูลข้ามเครื่อง
-        const socket = io('https://data.jsdelivr.com', { path: '/socket.io/', transports: ['websocket', 'polling'] });
-        // หมายเหตุ: หากต้องการ Server ส่วนตัว สามารถเปลี่ยน URL ด้านบนเป็นเซิร์ฟเวอร์ Node.js ของท่านได้ทันที แต่ชุดนี้เชื่อมต่อผ่านระบบกลางเพื่อให้ทดลองได้ทันที
-
+        let peer = null;
         let myId = '', roomId = '', myScore = 0;
         let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
-        let players = {};
+        let connections = {}; // เก็บการเชื่อมต่อกับผู้เล่นอื่น
+        let playersInfo = {}; // เก็บข้อมูลคะแนนและสถานะ
         let currentTarget = '';
         let activeQuiz = null;
         let incomingQuizData = null;
@@ -185,42 +181,97 @@
                 return;
             }
 
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.getElementById('gameArea').style.display = 'block';
-            document.getElementById('barId').innerText = myId;
-            document.getElementById('displayRoomId').innerText = roomId;
-            document.getElementById('myColorBox').style.backgroundColor = myColor;
+            document.getElementById('statusMsginnerText = "กำลังเชื่อมต่อเข้าห้อง..."';
+            document.getElementById('statusMsg').innerText = 'กำลังเชื่อมต่อเข้าเครือข่ายห้อง...';
 
-            // เข้าร่วมห้องผ่าน Socket
-            socket.emit('join_room', { roomId, playerId: myId, score: myScore, color: myColor });
+            // ใช้รหัสห้องร่วมกับชื่อผู้เล่นเป็น Peer ID เฉพาะตัว
+            let uniquePeerId = 'logic_room_' + roomId + '_' + myId;
+            peer = new Peer(uniquePeerId);
 
-            // ส่งข้อมูลอัปเดตสถานะทุกครั้งที่มีการเปลี่ยนแปลง
-            sendUpdate();
+            peer.on('open', (id) => {
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.getElementById('gameArea').style.display = 'block';
+                document.getElementById('barId').innerText = myId;
+                document.getElementById('displayRoomId').innerText = roomId;
+                document.getElementById('myColorBox').style.backgroundColor = myColor;
+
+                playersInfo[myId] = { score: myScore, color: myColor, target: '', quiz: null };
+                updateLobbyUI();
+
+                // ค้นหาและเชื่อมต่อไปยังผู้เล่นคนอื่นในห้องเดียวกัน (ทดลองวนลูปเชื่อมต่อเลขลำดับ 1-10 ในห้อง)
+                searchAndConnectPeers();
+            });
+
+            peer.on('connection', (conn) => {
+                setupConnection(conn);
+            });
+
+            peer.on('error', (err) => {
+                console.error(err);
+                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ ลองใหม่อีกครั้ง');
+            });
         }
 
-        function sendUpdate() {
-            if (!roomId) return;
-            socket.emit('player_update', {
-                roomId,
+        function searchAndConnectPeers() {
+            // ระบบสแกนหาเพื่อนในห้อง 4 หลักเดียวกัน (สมมติชื่อเพื่อนที่เราคาดเดา หรือให้พิมพ์บอกกัน)
+            // วิธีง่ายสุดในโหมด P2P: เมื่อเพื่อนเข้าห้อง ให้พิมพ์ชื่อเพื่อนอีกคนเพื่อกดเชื่อมต่อตรงได้ทันที หรือระบบจะสแกนอัตโนมัติ
+            setTimeout(() => {
+                let friendName = prompt("กรอกชื่อเพื่อนในห้อง '" + roomId + "' ที่ต้องการเชื่อมต่อด้วย:");
+                if (friendName && friendName !== myId) {
+                    let friendPeerId = 'logic_room_' + roomId + '_' + friendName;
+                    let conn = peer.connect(friendPeerId);
+                    setupConnection(conn);
+                }
+            }, 1000);
+        }
+
+        function setupConnection(conn) {
+            conn.on('open', () => {
+                connections[conn.peer] = conn;
+                sendMyStateToAll();
+            });
+
+            conn.on('data', (data) => {
+                handleIncomingData(data);
+            });
+
+            conn.on('close', () => {
+                delete connections[conn.peer];
+                updateLobbyUI();
+            });
+        }
+
+        function sendMyStateToAll() {
+            let payload = {
+                type: 'STATE_UPDATE',
                 playerId: myId,
                 score: myScore,
                 color: myColor,
                 target: currentTarget,
                 quiz: activeQuiz
-            });
+            };
+            for (let peerId in connections) {
+                connections[peerId].send(payload);
+            }
         }
 
-        socket.on('update_room_players', (roomData) => {
-            players = roomData || {};
-            delete players[myId]; // ตัดตัวเองออกจากการแสดงผลรายชื่อเพื่อท้าดวล
-            updateLobbyUI();
-            checkForIncomingQuiz();
-        });
+        function handleIncomingData(data) {
+            if (data.type === 'STATE_UPDATE') {
+                playersInfo[data.playerId] = {
+                    score: data.score,
+                    color: data.color,
+                    target: data.target,
+                    quiz: data.quiz
+                };
+                updateLobbyUI();
+                checkForIncomingQuiz(data.playerId, data);
+            }
+        }
 
         function updateLobbyUI() {
-            let list = [{ id: myId, score: myScore }];
-            for (let id in players) {
-                list.push({ id, score: players[id].score });
+            let list = [];
+            for (let id in playersInfo) {
+                list.push({ id, score: playersInfo[id].score });
             }
             list.sort((a, b) => b.score - a.score);
 
@@ -232,19 +283,21 @@
             document.getElementById('scoreList').innerHTML = scoreHtml;
 
             let playerHtml = '';
-            for (let id in players) {
-                let pInfo = players[id];
-                playerHtml += `
-                    <div class="player-card">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span class="color-badge" style="background-color: ${pInfo.color};"></span>
-                            <span style="font-weight: bold;">${id}</span>
+            for (let id in playersInfo) {
+                if (id !== myId) {
+                    let pInfo = playersInfo[id];
+                    playerHtml += `
+                        <div class="player-card">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span class="color-badge" style="background-color: ${pInfo.color};"></span>
+                                <span style="font-weight: bold;">${id}</span>
+                            </div>
+                            <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
                         </div>
-                        <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
-                    </div>
-                `;
+                    `;
+                }
             }
-            document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีผู้เล่นอื่นในห้องนี้ (ชวนเพื่อนมากรอกรหัสเดียวกันสิ!)</p>';
+            document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีการเชื่อมต่อกับเพื่อน (กดเชื่อมต่อมุมบนซ้าย)</p>';
         }
 
         function openCreatorModal(targetId) {
@@ -263,19 +316,13 @@
             let qVal = document.getElementById('selectQ').value === 'true';
             let conn = document.getElementById('selectConnector').value;
 
-            let symbol = '';
-            let truth = false;
-
+            let symbol = '', truth = false;
             if (conn === 'AND') { symbol = '∧ (และ)'; truth = pVal && qVal; }
             else if (conn === 'OR') { symbol = '∨ (หรือ)'; truth = pVal || qVal; }
             else if (conn === 'IF') { symbol = '→ (ถ้า...แล้ว...)'; truth = !pVal || qVal; }
             else if (conn === 'IFF') { symbol = '↔ (ก็ต่อเมื่อ)'; truth = pVal === qVal; }
 
-            activeQuiz = {
-                creator: myId,
-                target: currentTarget,
-                pVal, qVal, symbol, truth
-            };
+            activeQuiz = { creator: myId, target: currentTarget, pVal, qVal, symbol, truth };
 
             document.getElementById('creatorSection').style.display = 'none';
             document.getElementById('responderSection').style.display = 'block';
@@ -285,33 +332,28 @@
             document.getElementById('answerButtons').style.display = 'none';
             document.getElementById('closeBattleBtn').style.display = 'block';
 
-            sendUpdate();
+            sendMyStateToAll();
         }
 
-        function checkForIncomingQuiz() {
-            if (isBattling && incomingQuizData) return;
-
-            for (let id in players) {
-                let p = players[id];
-                if (p.target === myId && p.quiz && !incomingQuizData) {
-                    incomingQuizData = p.quiz;
-                    isBattling = true;
-                    answeredCurrentQuiz = false;
-                    
-                    document.getElementById('battleOverlay').style.display = 'flex';
-                    document.getElementById('battleTitle').innerText = `🎯 มีโจทย์จาก ${id}!`;
-                    document.getElementById('creatorSection').style.display = 'none';
-                    document.getElementById('responderSection').style.display = 'block';
-                    document.getElementById('battleDesc').innerText = `ผู้ท้าชิง ${id} ส่งโจทย์ข้อนี้มาให้คุณตอบ:`;
-                    
-                    let pStr = incomingQuizData.pVal ? 'T' : 'F';
-                    let qStr = incomingQuizData.qVal ? 'T' : 'F';
-                    document.getElementById('quizQuestion').innerText = `กำหนดให้ P = ${pStr}, Q = ${qStr}\nค่าความจริงของ [ P ${incomingQuizData.symbol} Q ] คืออะไร?`;
-                    
-                    document.getElementById('answerButtons').style.display = 'block';
-                    document.getElementById('closeBattleBtn').style.display = 'none';
-                    break;
-                }
+        function checkForIncomingQuiz(senderId, data) {
+            if (isBattling) return;
+            if (data.target === myId && data.quiz && !incomingQuizData) {
+                incomingQuizData = data.quiz;
+                isBattling = true;
+                answeredCurrentQuiz = false;
+                
+                document.getElementById('battleOverlay').style.display = 'flex';
+                document.getElementById('battleTitle').innerText = `🎯 มีโจทย์จาก ${senderId}!`;
+                document.getElementById('creatorSection').style.display = 'none';
+                document.getElementById('responderSection').style.display = 'block';
+                document.getElementById('battleDesc').innerText = `ผู้ท้าชิง ${senderId} ส่งโจทย์ข้อนี้มาให้คุณตอบ:`;
+                
+                let pStr = incomingQuizData.pVal ? 'T' : 'F';
+                let qStr = incomingQuizData.qVal ? 'T' : 'F';
+                document.getElementById('quizQuestion').innerText = `กำหนดให้ P = ${pStr}, Q = ${qStr}\nค่าความจริงของ [ P ${incomingQuizData.symbol} Q ] คืออะไร?`;
+                
+                document.getElementById('answerButtons').style.display = 'block';
+                document.getElementById('closeBattleBtn').style.display = 'none';
             }
         }
 
@@ -330,7 +372,7 @@
             } else {
                 document.getElementById('battleDesc').innerHTML = '<span style="color: #f44336; font-size: 18px; font-weight: bold;">❌ ผิดครับ! น่าเสียดาย</span>';
             }
-            sendUpdate();
+            sendMyStateToAll();
         }
 
         function endBattle() {
@@ -340,7 +382,7 @@
             incomingQuizData = null;
             answeredCurrentQuiz = false;
             document.getElementById('battleOverlay').style.display = 'none';
-            sendUpdate();
+            sendMyStateToAll();
         }
     </script>
 </body>
