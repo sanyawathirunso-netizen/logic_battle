@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>เกมตรรกศาสตร์ Google Sheets Sync</title>
+    <title>เกมตรรกศาสตร์ Google Sheets Sync (Multiplayer Fix)</title>
     <style>
         body {
             background-color: #121212;
@@ -41,7 +41,7 @@
             max-width: 320px;
             box-shadow: 0 0 20px rgba(76,175,80,0.3);
         }
-        .login-box input, .login-box select {
+        .login-box input {
             padding: 10px;
             font-size: 15px;
             width: 90%;
@@ -150,6 +150,7 @@
         let myX = Math.random() * 400 + 50, myY = Math.random() * 250 + 50;
         const speed = 3;
         let playersData = {};
+        let isSyncing = false;
         const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
 
         window.addEventListener('keydown', (e) => { if (keys.hasOwnProperty(e.code)) keys[e.code] = true; });
@@ -175,7 +176,9 @@
                 document.getElementById('barId').innerText = myId;
                 document.getElementById('displayRoomId').innerText = roomId;
 
-                setInterval(syncDataWithSheets, 1500); // ซิงค์ข้อมูลทุกๆ 1.5 วินาที
+                // สุ่มเวลาซิงค์ของแต่ละเครื่องไม่ให้ตรงกันเป๊ะ (ป้องกันเซิร์ฟเวอร์รับคำขอชนกัน)
+                let randomInterval = 1800 + Math.random() * 800;
+                setInterval(syncDataWithSheets, randomInterval);
                 requestAnimationFrame(gameLoop);
             }, 500);
         }
@@ -191,7 +194,8 @@
         }
 
         function syncDataWithSheets() {
-            if (!roomId) return;
+            if (!roomId || isSyncing) return;
+            isSyncing = true;
 
             // ส่งข้อมูลของเราขึ้น Sheets
             fetch(SCRIPT_URL, {
@@ -199,19 +203,23 @@
                 mode: 'no-cors',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ roomId, playerId: myId, score: myScore, x: Math.round(myX), y: Math.round(myY), status: 'active' })
-            }).catch(err => console.log(err));
-
-            // ดึงข้อมูลผู้เล่นทั้งหมดในห้องลงมา
-            fetch(`${SCRIPT_URL}?roomId=${roomId}`)
-                .then(res => res.json())
-                .then(data => {
-                    playersData = {};
-                    data.forEach(p => {
-                        playersData[p.playerId] = { x: p.x, y: p.y, score: p.score };
-                    });
-                    updateScoreboard();
-                })
-                .catch(err => console.log(err));
+            }).then(() => {
+                // ดึงข้อมูลผู้เล่นทั้งหมดในห้องลงมา
+                return fetch(`${SCRIPT_URL}?roomId=${roomId}`);
+            })
+            .then(res => res.json())
+            .then(data => {
+                playersData = {};
+                data.forEach(p => {
+                    playersData[p.playerId] = { x: p.x, y: p.y, score: p.score };
+                });
+                updateScoreboard();
+                isSyncing = false;
+            })
+            .catch(err => {
+                console.log(err);
+                isSyncing = false;
+            });
         }
 
         function updateScoreboard() {
@@ -232,7 +240,6 @@
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // ตารางพื้นหลัง
             ctx.strokeStyle = '#222';
             for (let i = 0; i < canvas.width; i += 40) {
                 ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
