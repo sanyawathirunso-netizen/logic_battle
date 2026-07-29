@@ -2,8 +2,8 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>เกมตรรกศาสตร์ Sheets Battle</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกมประลองตรรกศาสตร์ (Local Mode)</title>
     <style>
         body {
             background-color: #121212;
@@ -15,157 +15,161 @@
             min-height: 100vh;
             margin: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            overflow: hidden;
             -webkit-user-select: none;
             user-select: none;
         }
-        #loginOverlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.95);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            z-index: 100;
-            padding: 20px;
-            box-sizing: border-box;
-        }
-        .login-box {
+        .container {
             background: #252525;
             border: 2px solid #4caf50;
             padding: 25px;
             border-radius: 12px;
             text-align: center;
             width: 100%;
-            max-width: 320px;
+            max-width: 400px;
             box-shadow: 0 0 20px rgba(76,175,80,0.3);
+            box-sizing: border-box;
         }
-        .login-box input {
-            padding: 10px; font-size: 15px; width: 90%;
-            background: #333; color: white; border: 1px solid #555;
-            border-radius: 6px; margin: 8px 0; text-align: center;
+        input, select, button {
+            padding: 10px;
+            font-size: 15px;
+            width: 90%;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 6px;
+            margin: 8px 0;
+            text-align: center;
+        }
+        .btn-action { background-color: #4caf50; color: white; font-weight: bold; cursor: pointer; border: none; }
+        .btn-action:hover { background-color: #45a049; }
+        
+        #gameArea { display: none; width: 100%; max-width: 450px; }
+        .player-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #333;
+            padding: 10px 15px;
+            margin: 6px 0;
+            border-radius: 6px;
+            border-left: 5px solid #00bcd4;
+        }
+        .color-badge {
+            width: 25px; height: 25px; border-radius: 50%; display: inline-block; border: 2px solid #fff;
         }
         #scoreboard {
-            position: absolute; top: 10px; right: 10px;
-            background: rgba(37, 37, 37, 0.9); border: 2px solid #4caf50;
-            padding: 8px 12px; border-radius: 8px; font-size: 12px; min-width: 150px; z-index: 5;
+            background: rgba(37, 37, 37, 0.9);
+            border: 2px solid #4caf50;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: left;
         }
-        #scoreboard h4 { margin: 0 0 4px 0; color: #ffeb3b; font-size: 13px; text-align: center; border-bottom: 1px solid #555; padding-bottom: 2px; }
+        #scoreboard h4 { margin: 0 0 8px 0; color: #ffeb3b; text-align: center; border-bottom: 1px solid #555; padding-bottom: 4px; }
         #scoreList { list-style: none; padding: 0; margin: 0; }
-        #scoreList li { display: flex; justify-content: space-between; margin: 2px 0; }
-        #myInfoBar {
-            position: absolute; top: 10px; left: 10px;
-            background: rgba(37, 37, 37, 0.9); border: 2px solid #4caf50;
-            padding: 8px 12px; border-radius: 8px; font-size: 13px; font-weight: bold; color: #4caf50; z-index: 5;
-        }
-        #gameContainer { position: relative; margin-top: 50px; display: none; text-align: center; }
-        canvas { border: 3px solid #4caf50; background-color: #1e1e1e; box-shadow: 0 0 20px rgba(76, 175, 80, 0.4); max-width: 100%; height: auto; }
-        .info { margin-bottom: 8px; font-size: 12px; color: #4caf50; }
-        #mobileControls {
-            display: none; margin-top: 10px;
-            grid-template-columns: repeat(3, 60px); grid-template-rows: repeat(2, 60px);
-            gap: 5px; justify-content: center;
-        }
-        .d-btn {
-            background: #333; color: #4caf50; border: 2px solid #4caf50;
-            font-size: 20px; border-radius: 10px; font-weight: bold; cursor: pointer;
-        }
-        .d-btn:active { background: #4caf50; color: #121212; }
-        .btn-action { background-color: #4caf50; color: white; font-weight: bold; cursor: pointer; width: 100%; padding: 10px; border: none; border-radius: 6px; font-size: 15px; }
+        #scoreList li { display: flex; justify-content: space-between; margin: 4px 0; font-size: 14px; }
         
         #battleOverlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.95); flex-direction: column; align-items: center; justify-content: center; z-index: 999; text-align: center; padding: 15px; box-sizing: border-box;
         }
         .battle-box {
-            background: #252525; border: 2px solid #ff9800; padding: 20px; border-radius: 12px; max-width: 380px; width: 100%; box-shadow: 0 0 25px rgba(255, 152, 0, 0.4);
+            background: #252525; border: 2px solid #ff9800; padding: 25px; border-radius: 12px; max-width: 380px; width: 100%; box-shadow: 0 0 25px rgba(255, 152, 0, 0.4);
         }
-        select, .battle-box button { padding: 10px; font-size: 14px; margin: 8px 0; background: #333; color: white; border: 1px solid #555; border-radius: 6px; width: 90%; }
-        .btn-battle { background-color: #ff9800; font-weight: bold; cursor: pointer; color: #000; }
+        .btn-battle { background-color: #ff9800; font-weight: bold; cursor: pointer; color: #000; border: none; }
     </style>
 </head>
 <body>
 
-    <div id="loginOverlay">
-        <div class="login-box">
-            <h2 style="color: #4caf50; margin-top:0;">📊 เกมตรรกศาสตร์ Sheets</h2>
-            <input type="text" id="usernameInput" placeholder="ชื่อผู้เล่น..." maxlength="12">
-            <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก..." maxlength="4">
-            <br><br>
-            <button onclick="joinGame()" class="btn-action">เข้าสู่เกม</button>
-            <p id="statusMsg" style="font-size: 11px; color: #ffeb3b; margin-top: 8px;"></p>
-        </div>
+    <!-- หน้า login เข้าห้อง -->
+    <div id="loginOverlay" class="container">
+        <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์</h2>
+        <input type="text" id="usernameInput" placeholder="ชื่อผู้เล่น..." maxlength="12">
+        <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก..." maxlength="4">
+        <br>
+        <button onclick="joinGame()" class="btn-action">เข้าสู่ห้องประลอง</button>
+        <p id="statusMsg" style="font-size: 12px; color: #ffeb3b; margin-top: 8px;"></p>
     </div>
 
-    <div id="myInfoBar">
-        👤 <span id="barId">-</span> | 🏠 ห้อง: <span id="displayRoomId" style="color:#4caf50;">-</span>
-    </div>
-
-    <div id="scoreboard">
-        <h4>🏆 ตารางคะแนน</h4>
-        <ul id="scoreList"></ul>
-    </div>
-
-    <div id="gameContainer">
-        <div class="info">เดินไปชนผู้เล่นอื่นเพื่อประลองตรรกศาสตร์!</div>
-        <canvas id="gameCanvas" width="550" height="350"></canvas>
-        <div id="mobileControls">
-            <div></div>
-            <button class="d-btn" ontouchstart="setKey('ArrowUp', true)" ontouchend="setKey('ArrowUp', false)" onmousedown="setKey('ArrowUp', true)" onmouseup="setKey('ArrowUp', false)">⬆️</button>
-            <div></div>
-            <button class="d-btn" ontouchstart="setKey('ArrowLeft', true)" ontouchend="setKey('ArrowLeft', false)" onmousedown="setKey('ArrowLeft', true)" onmouseup="setKey('ArrowLeft', false)">⬅️</button>
-            <button class="d-btn" ontouchstart="setKey('ArrowDown', true)" ontouchend="setKey('ArrowDown', false)" onmousedown="setKey('ArrowDown', true)" onmouseup="setKey('ArrowDown', false)">⬇️</button>
-            <button class="d-btn" ontouchstart="setKey('ArrowRight', true)" ontouchend="setKey('ArrowRight', false)" onmousedown="setKey('ArrowRight', true)" onmouseup="setKey('ArrowRight', false)">➡️</button>
-        </div>
-    </div>
-
-    <div id="battleOverlay">
-        <div class="battle-box">
-            <h3 id="battleTitle" style="color: #ff9800; margin-top:0;">🎲 ประลองตรรกศาสตร์</h3>
-            <p id="battleDesc" style="font-size: 13px; color: #ccc;"></p>
-            
-            <div id="questionCreator" style="display:none;">
-                <label style="font-size: 12px; color: #00bcd4;">ค่า P:</label>
-                <select id="valP"><option value="true">T (จริง)</option><option value="false">F (เท็จ)</option></select>
-                <br>
-                <label style="font-size: 12px; color: #00bcd4;">ตัวเชื่อม:</label>
-                <select id="connInput">
-                    <option value="AND">และ (∧)</option>
-                    <option value="OR">หรือ (∨)</option>
-                    <option value="IF">ถ้า...แล้ว... (→)</option>
-                    <option value="IFF">ก็ต่อเมื่อ (↔)</option>
-                </select>
-                <br>
-                <label style="font-size: 12px; color: #00bcd4;">ค่า Q:</label>
-                <select id="valQ"><option value="true">T (จริง)</option><option value="false">F (เท็จ)</option></select>
-                <br>
-                <button onclick="submitQuiz()" class="btn-battle">ส่งโจทย์ให้เพื่อนตอบ</button>
+    <!-- หน้าหลักเกม (Lobby) -->
+    <div id="gameArea">
+        <div class="container" style="max-width: 100%;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <span>👤 <strong id="barId" style="color:#4caf50;">-</strong></span>
+                <span>🏠 ห้อง: <strong id="displayRoomId" style="color:#ffeb3b;">-</strong></span>
+                <span id="myColorBox" class="color-badge"></span>
             </div>
 
-            <div id="questionResponder" style="display:none;">
-                <p id="displayQuizText" style="font-size: 18px; color: #ffeb3b; font-weight: bold; margin: 15px 0;"></p>
-                <button onclick="answerQuiz(true)" style="background-color: #4caf50; width: 45%; font-size: 15px; cursor:pointer;">T (True)</button>
-                <button onclick="answerQuiz(false)" style="background-color: #f44336; width: 45%; font-size: 15px; cursor:pointer; margin-left: 5px;">F (False)</button>
+            <div id="scoreboard">
+                <h4>🏆 ตารางคะแนนรวม</h4>
+                <ul id="scoreList"></ul>
+            </div>
+
+            <h3 style="color: #00bcd4; margin: 10px 0 5px 0; font-size: 16px;">👥 รายชื่อผู้เล่นในห้อง (คลิกเพื่อสร้างโจทย์ท้าดวล)</h3>
+            <div id="playerListContainer" style="max-height: 200px; overflow-y: auto;">
+                <p style="color: #888; font-size: 13px;">กำลังโหลดรายชื่อผู้เล่น...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- หน้าต่างสร้างโจทย์และตอบโจทย์ -->
+    <div id="battleOverlay">
+        <div class="battle-box">
+            <h3 id="battleTitle" style="color: #ff9800; margin-top:0;">📝 สร้างโจทย์ตรรกศาสตร์</h3>
+            
+            <!-- ส่วนที่ 1: หน้าจอสร้างโจทย์ (ผู้ท้าดวลเป็นคนตั้ง) -->
+            <div id="creatorSection">
+                <p id="targetPlayerLabel" style="font-size: 13px; color: #ccc; margin-bottom: 10px;"></p>
+                <div style="text-align: left; margin: 0 auto; width: 90%;">
+                    <label style="font-size: 13px; color: #00bcd4;">ค่า P:</label>
+                    <select id="selectP">
+                        <option value="true">T (จริง)</option>
+                        <option value="false">F (เท็จ)</option>
+                    </select>
+                    
+                    <label style="font-size: 13px; color: #00bcd4;">ตัวเชื่อม:</label>
+                    <select id="selectConnector">
+                        <option value="AND">∧ (และ)</option>
+                        <option value="OR">∨ (หรือ)</option>
+                        <option value="IF">→ (ถ้า...แล้ว...)</option>
+                        <option value="IFF">↔ (ก็ต่อเมื่อ)</option>
+                    </select>
+
+                    <label style="font-size: 13px; color: #00bcd4;">ค่า Q:</label>
+                    <select id="selectQ">
+                        <option value="true">T (จริง)</option>
+                        <option value="false">F (เท็จ)</option>
+                    </select>
+                </div>
+                <button onclick="sendQuizToTarget()" class="btn-battle" style="margin-top: 15px; padding: 10px; width: 90%;">ส่งโจทย์ให้เพื่อนตอบ 🚀</button>
+                <button onclick="endBattle()" style="background: #555; margin-top: 5px; border:none; padding:8px; width: 90%; border-radius:6px; cursor:pointer; color:white;">ยกเลิก</button>
+            </div>
+
+            <!-- ส่วนที่ 2: หน้าจอรอเพื่อนตอบ หรือหน้าจอให้เป้าหมายตอบโจทย์ -->
+            <div id="responderSection" style="display: none;">
+                <p id="battleDesc" style="font-size: 14px; color: #ccc;"></p>
+                <p id="quizQuestion" style="font-size: 18px; color: #ffeb3b; font-weight: bold; margin: 15px 0;"></p>
+                
+                <div id="answerButtons">
+                    <button onclick="answerQuiz(true)" style="background-color: #4caf50; width: 45%; font-size: 16px; cursor:pointer; border:none; padding:12px; border-radius:6px; color:white; font-weight:bold;">T (True)</button>
+                    <button onclick="answerQuiz(false)" style="background-color: #f44336; width: 45%; font-size: 16px; cursor:pointer; border:none; padding:12px; border-radius:6px; color:white; font-weight:bold; margin-left: 5px;">F (False)</button>
+                </div>
+                
+                <button id="closeBattleBtn" onclick="endBattle()" class="btn-action" style="display:none; margin-top: 15px;">กลับสู่หน้าหลัก</button>
             </div>
         </div>
     </div>
 
     <script>
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxvURE2RdaN4Px1RMRW4-qk_5i5mywrMXiy-2HxHu6pWpMKUPJrr5K5Ylx12t1vOGJQZA/exec';
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-
         let myId = '', roomId = '', myScore = 0;
-        let myX = Math.random() * 400 + 50, myY = Math.random() * 250 + 50;
-        const speed = 4; // เพิ่มความเร็วในการเดินให้ลื่นขึ้น
-        let playersData = {};
-        let inBattle = false;
-        let currentQuiz = null;
-        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
-
-        window.addEventListener('keydown', (e) => { if (keys.hasOwnProperty(e.code)) keys[e.code] = true; });
-        window.addEventListener('keyup', (e) => { if (keys.hasOwnProperty(e.code)) keys[e.code] = false; });
+        let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+        let players = {}; // เก็บข้อมูลผู้เล่นในห้อง
+        let currentTarget = '';
+        let activeQuiz = null;
+        let incomingQuizData = null;
+        let isBattling = false;
+        let answeredCurrentQuiz = false;
+        let channel = null;
 
         function joinGame() {
             myId = document.getElementById('usernameInput').value.trim();
@@ -176,168 +180,174 @@
                 return;
             }
 
-            document.getElementById('statusMsg').innerText = 'กำลังเข้าสู่เกม...';
+            // สร้าง BroadcastChannel แยกตามรหัสห้อง
+            channel = new BroadcastChannel('logic_game_room_' + roomId);
+            channel.onmessage = (event) => handleChannelMessage(event.data);
 
-            setTimeout(() => {
-                document.getElementById('loginOverlay').style.display = 'none';
-                document.getElementById('gameContainer').style.display = 'block';
-                if (/Mobi|Android/i.test(navigator.userAgent)) {
-                    document.getElementById('mobileControls').style.display = 'grid';
-                }
-                document.getElementById('barId').innerText = myId;
-                document.getElementById('displayRoomId').innerText = roomId;
+            document.getElementById('loginOverlay').style.display = 'none';
+            document.getElementById('gameArea').style.display = 'block';
+            document.getElementById('barId').innerText = myId;
+            document.getElementById('displayRoomId').innerText = roomId;
+            document.getElementById('myColorBox').style.backgroundColor = myColor;
 
-                setInterval(syncDataWithSheets, 1500); // ซิงค์ข้อมูลเบื้องหลัง
-                requestAnimationFrame(gameLoop);
-            }, 500);
+            // ส่งสัญญาณแจ้งเตือนการเข้าห้อง
+            broadcastState();
+
+            // ส่งสัญญาณซิงค์ทุกๆ 2 วินาที
+            setInterval(() => {
+                if (roomId) broadcastState();
+            }, 2000);
         }
 
-        function setKey(code, state) { keys[code] = state; }
+        function broadcastState() {
+            if (!channel) return;
+            channel.postMessage({
+                type: 'SYNC',
+                playerId: myId,
+                score: myScore,
+                color: myColor,
+                target: currentTarget,
+                quiz: activeQuiz
+            });
+        }
 
-        function update() {
-            if (inBattle) return;
+        function handleChannelMessage(data) {
+            if (data.type === 'SYNC') {
+                if (data.playerId === myId) return; // ไม่สนใจตัวเอง
 
-            let moved = false;
-            if (keys.ArrowUp && myY > 20) { myY -= speed; moved = true; }
-            if (keys.ArrowDown && myY < canvas.height - 20) { myY += speed; moved = true; }
-            if (keys.ArrowLeft && myX > 20) { myX -= speed; moved = true; }
-            if (keys.ArrowRight && myX < canvas.width - 20) { myX += speed; moved = true; }
+                players[data.playerId] = {
+                    score: data.score,
+                    color: data.color,
+                    target: data.target,
+                    quiz: data.quiz
+                };
 
-            // ตรวจสอบการเดินชนกับผู้เล่นคนอื่นในหน้าจอ
-            if (moved) {
-                checkCollisionLocally();
+                updateLobbyUI();
+                checkForIncomingQuiz(data.playerId, data);
             }
         }
 
-        function checkCollisionLocally() {
-            for (let id in playersData) {
-                if (id !== myId) {
-                    let p = playersData[id];
-                    let dist = Math.hypot(myX - p.x, myY - p.y);
-                    if (dist < 35 && !inBattle) {
-                        // ชนกันแล้ว! สุ่มบทบาท
-                        triggerBattle(id);
-                        break;
-                    }
-                }
-            }
-        }
-
-        function triggerBattle(targetId) {
-            inBattle = true;
-            document.getElementById('battleOverlay').style.display = 'flex';
-            
-            // ตัดสินใจบทบาทโดยเทียบชื่อไอดี (ใครอักษรมากกว่าเป็นคนสร้างโจทย์)
-            let amCreator = myId > targetId;
-
-            if (amCreator) {
-                document.getElementById('battleTitle').innerText = '📝 คุณได้เป็น "ผู้สร้างโจทย์"';
-                document.getElementById('battleDesc').innerText = `คุณเดินชนกับ ${targetId} เลือกสร้างโจทย์ตรรกศาสตร์ให้เขาตอบ!`;
-                document.getElementById('questionCreator').style.display = 'block';
-                document.getElementById('questionResponder').style.display = 'none';
-            } else {
-                document.getElementById('battleTitle').innerText = '🎯 คุณได้เป็น "ผู้ตอบโจทย์"';
-                document.getElementById('battleDesc', `กำลังรอโจทย์จาก ${targetId}...`);
-                document.getElementById('questionCreator').style.display = 'none';
-                document.getElementById('questionResponder').style.display = 'block';
-                document.getElementById('displayQuizText').innerText = '⏳ กำลังรอโจทย์... (กดรีเฟรชหรือรอสักครู่)';
-            }
-        }
-
-        function submitQuiz() {
-            let pVal = document.getElementById('valP').value === 'true';
-            let qVal = document.getElementById('valQ').value === 'true';
-            let conn = document.getElementById('connInput').value;
-
-            let truth = false;
-            if (conn === 'AND') truth = pVal && qVal;
-            if (conn === 'OR') truth = pVal || qVal;
-            if (conn === 'IF') truth = !pVal || qVal;
-            if (conn === 'IFF') truth = pVal === qVal;
-
-            currentQuiz = { pVal, qVal, connector: conn, truth };
-            
-            // บันทึกสถานะว่ากำลังสู้
-            document.getElementById('battleOverlay').style.display = 'none';
-            inBattle = false;
-            myX += 30; // เด้งตัวออกมากันชนซ้ำ
-            alert('ส่งโจทย์เรียบร้อย!');
-        }
-
-        function answerQuiz(userAns) {
-            alert('ตอบคำถามเรียบร้อย!');
-            document.getElementById('battleOverlay').style.display = 'none';
-            inBattle = false;
-            myX += 30;
-        }
-
-        function syncDataWithSheets() {
-            if (!roomId) return;
-
-            fetch(SCRIPT_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ roomId, playerId: myId, score: myScore, x: Math.round(myX), y: Math.round(myY), status: inBattle ? 'battling' : 'active' })
-            }).then(() => {
-                return fetch(`${SCRIPT_URL}?roomId=${roomId}`);
-            })
-            .then(res => res.json())
-            .then(data => {
-                playersData = {};
-                data.forEach(p => {
-                    playersData[p.playerId] = { x: p.x, y: p.y, score: p.score, status: p.status };
-                });
-                updateScoreboard();
-            })
-            .catch(err => console.log(err));
-        }
-
-        function updateScoreboard() {
-            let list = [];
-            for (let id in playersData) {
-                list.push({ id, score: playersData[id].score });
+        function updateLobbyUI() {
+            let list = [{ id: myId, score: myScore }];
+            for (let id in players) {
+                list.push({ id, score: players[id].score });
             }
             list.sort((a, b) => b.score - a.score);
 
-            let html = '';
+            let scoreHtml = '';
             list.forEach(p => {
-                let color = (p.id === myId) ? 'color: #4caf50; font-weight:bold;' : 'color: #fff;';
-                html += `<li style="${color}"><span>${p.id}</span> <span>⭐ ${p.score}</span></li>`;
+                let bold = (p.id === myId) ? 'color: #4caf50; font-weight:bold;' : 'color: #fff;';
+                scoreHtml += `<li style="${bold}"><span>${p.id}</span> <span>⭐ ${p.score} คะแนน</span></li>`;
             });
-            document.getElementById('scoreList').innerHTML = html;
+            document.getElementById('scoreList').innerHTML = scoreHtml;
+
+            let playerHtml = '';
+            for (let id in players) {
+                let pInfo = players[id];
+                playerHtml += `
+                    <div class="player-card">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="color-badge" style="background-color: ${pInfo.color};"></span>
+                            <span style="font-weight: bold;">${id}</span>
+                        </div>
+                        <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
+                    </div>
+                `;
+            }
+            document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีผู้เล่นอื่นในห้องนี้</p>';
         }
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function openCreatorModal(targetId) {
+            currentTarget = targetId;
+            isBattling = true;
+            answeredCurrentQuiz = false;
+            document.getElementById('battleOverlay').style.display = 'flex';
+            document.getElementById('battleTitle').innerText = `📝 สร้างโจทย์ให้ ${targetId}`;
+            document.getElementById('targetPlayerLabel').innerText = `คุณกำลังสร้างโจทย์ท้าดวล ${targetId}`;
+            document.getElementById('creatorSection').style.display = 'block';
+            document.getElementById('responderSection').style.display = 'none';
+        }
 
-            ctx.strokeStyle = '#222';
-            for (let i = 0; i < canvas.width; i += 40) {
-                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
-            }
+        function sendQuizToTarget() {
+            let pVal = document.getElementById('selectP').value === 'true';
+            let qVal = document.getElementById('selectQ').value === 'true';
+            let conn = document.getElementById('selectConnector').value;
 
-            for (let id in playersData) {
-                let p = playersData[id];
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
-                ctx.fillStyle = (id === myId) ? '#4caf50' : '#00bcd4';
-                ctx.fill();
-                ctx.lineWidth = 2;
-                ctx.strokeStyle = '#ffffff';
-                ctx.stroke();
-                ctx.closePath();
+            let symbol = '';
+            let truth = false;
 
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '11px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(`${id} (${p.score})`, p.x, p.y - 22);
+            if (conn === 'AND') { symbol = '∧ (และ)'; truth = pVal && qVal; }
+            else if (conn === 'OR') { symbol = '∨ (หรือ)'; truth = pVal || qVal; }
+            else if (conn === 'IF') { symbol = '→ (ถ้า...แล้ว...)'; truth = !pVal || qVal; }
+            else if (conn === 'IFF') { symbol = '↔ (ก็ต่อเมื่อ)'; truth = pVal === qVal; }
+
+            activeQuiz = {
+                creator: myId,
+                target: currentTarget,
+                pVal, qVal, symbol, truth
+            };
+
+            document.getElementById('creatorSection').style.display = 'none';
+            document.getElementById('responderSection').style.display = 'block';
+            document.getElementById('battleTitle').innerText = '⏳ ส่งโจทย์เรียบร้อย';
+            document.getElementById('battleDesc').innerText = `กำลังรอให้ ${currentTarget} ตอบโจทย์ของคุณ...`;
+            document.getElementById('quizQuestion').innerText = `โจทย์ที่ส่ง:\nP = ${pVal?'T':'F'}, Q = ${qVal?'T':'F'} [ P ${symbol} Q ]`;
+            document.getElementById('answerButtons').style.display = 'none';
+            document.getElementById('closeBattleBtn').style.display = 'block';
+
+            broadcastState();
+        }
+
+        function checkForIncomingQuiz(senderId, data) {
+            if (isBattling) return;
+
+            // เช็คว่ามีคนส่งโจทย์มาหาเราหรือไม่
+            if (data.target === myId && data.quiz && !incomingQuizData) {
+                incomingQuizData = data.quiz;
+                isBattling = true;
+                answeredCurrentQuiz = false;
+                
+                document.getElementById('battleOverlay').style.display = 'flex';
+                document.getElementById('battleTitle').innerText = `🎯 มีโจทย์จาก ${senderId}!`;
+                document.getElementById('creatorSection').style.display = 'none';
+                document.getElementById('responderSection').style.display = 'block';
+                document.getElementById('battleDesc').innerText = `ผู้ท้าชิง ${senderId} ส่งโจทย์ข้อนี้มาให้คุณตอบ:`;
+                
+                let pStr = incomingQuizData.pVal ? 'T' : 'F';
+                let qStr = incomingQuizData.qVal ? 'T' : 'F';
+                document.getElementById('quizQuestion').innerText = `กำหนดให้ P = ${pStr}, Q = ${qStr}\nค่าความจริงของ [ P ${incomingQuizData.symbol} Q ] คืออะไร?`;
+                
+                document.getElementById('answerButtons').style.display = 'block';
+                document.getElementById('closeBattleBtn').style.display = 'none';
             }
         }
 
-        function gameLoop() {
-            update();
-            draw();
-            requestAnimationFrame(gameLoop);
+        function answerQuiz(userAnswer) {
+            if (answeredCurrentQuiz) return;
+            answeredCurrentQuiz = true;
+
+            document.getElementById('answerButtons').style.display = 'none';
+            document.getElementById('closeBattleBtn').style.display = 'block';
+
+            let correctAns = incomingQuizData ? incomingQuizData.truth : (activeQuiz ? activeQuiz.truth : false);
+
+            if (userAnswer === correctAns) {
+                myScore += 10;
+                document.getElementById('battleDesc').innerHTML = '<span style="color: #4caf50; font-size: 18px; font-weight: bold;">🎉 ถูกต้อง! คุณได้รับ +10 คะแนน</span>';
+            } else {
+                document.getElementById('battleDesc').innerHTML = '<span style="color: #f44336; font-size: 18px; font-weight: bold;">❌ ผิดครับ! น่าเสียดาย</span>';
+            }
+            broadcastState();
+        }
+
+        function endBattle() {
+            isBattling = false;
+            currentTarget = '';
+            activeQuiz = null;
+            incomingQuizData = null;
+            answeredCurrentQuiz = false;
+            document.getElementById('battleOverlay').style.display = 'none';
+            broadcastState();
         }
     </script>
 </body>
