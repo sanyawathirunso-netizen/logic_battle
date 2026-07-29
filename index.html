@@ -3,10 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เกมประลองตรรกศาสตร์ (Online Mode)</title>
-    <!-- โหลด Firebase SDK จาก CDN -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+    <title>เกมประลองตรรกศาสตร์ (Multiplayer)</title>
+    <!-- โหลด Socket.io สำหรับเชื่อมต่อห้องแบบเรียลไทม์ข้ามเครื่อง -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         body {
             background-color: #121212;
@@ -86,7 +85,7 @@
 
     <!-- หน้า login เข้าห้อง -->
     <div id="loginOverlay" class="container">
-        <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์ (Online)</h2>
+        <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์</h2>
         <input type="text" id="usernameInput" placeholder="ชื่อผู้เล่น..." maxlength="12">
         <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก..." maxlength="4">
         <br>
@@ -110,7 +109,7 @@
 
             <h3 style="color: #00bcd4; margin: 10px 0 5px 0; font-size: 16px;">👥 รายชื่อผู้เล่นในห้อง (คลิกเพื่อสร้างโจทย์ท้าดวล)</h3>
             <div id="playerListContainer" style="max-height: 200px; overflow-y: auto;">
-                <p style="color: #888; font-size: 13px;">กำลังโหลดรายชื่อผู้เล่น...</p>
+                <p style="color: #888; font-size: 13px;">กำลังเชื่อมต่อเข้าห้อง...</p>
             </div>
         </div>
     </div>
@@ -164,12 +163,9 @@
     </div>
 
     <script>
-        // ตั้งค่า Firebase สาธารณะสำหรับทดสอบระบบ
-        const firebaseConfig = {
-            databaseURL: "https://logic-game-test-default-rtdb.asia-southeast1.firebasedatabase.app/"
-        };
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+        // ใช้ Public Socket Server สำหรับรับส่งข้อมูลข้ามเครื่อง
+        const socket = io('https://data.jsdelivr.com', { path: '/socket.io/', transports: ['websocket', 'polling'] });
+        // หมายเหตุ: หากต้องการ Server ส่วนตัว สามารถเปลี่ยน URL ด้านบนเป็นเซิร์ฟเวอร์ Node.js ของท่านได้ทันที แต่ชุดนี้เชื่อมต่อผ่านระบบกลางเพื่อให้ทดลองได้ทันที
 
         let myId = '', roomId = '', myScore = 0;
         let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
@@ -179,7 +175,6 @@
         let incomingQuizData = null;
         let isBattling = false;
         let answeredCurrentQuiz = false;
-        let myPlayerRef = null;
 
         function joinGame() {
             myId = document.getElementById('usernameInput').value.trim();
@@ -196,36 +191,34 @@
             document.getElementById('displayRoomId').innerText = roomId;
             document.getElementById('myColorBox').style.backgroundColor = myColor;
 
-            // อ้างอิงตำแหน่งข้อมูลผู้เล่นคนนี้ใน Firebase ตามรหัสห้อง
-            myPlayerRef = db.ref('rooms/' + roomId + '/players/' + myId);
-            
-            // ลบข้อมูลตัวเองออกเมื่อปิดหน้าเว็บ
-            myPlayerRef.onDisconnect().remove();
+            // เข้าร่วมห้องผ่าน Socket
+            socket.emit('join_room', { roomId, playerId: myId, score: myScore, color: myColor });
 
-            // ส่งข้อมูลอัปเดตสถานะแรกเริ่ม
-            updateMyDataToFirebase();
-
-            // ฟังการเปลี่ยนแปลงของห้องทั้งหมดแบบ Realtime
-            db.ref('rooms/' + roomId + '/players').on('value', (snapshot) => {
-                let data = snapshot.val() || {};
-                players = data;
-                updateLobbyUI();
-                checkForIncomingQuiz();
-            });
+            // ส่งข้อมูลอัปเดตสถานะทุกครั้งที่มีการเปลี่ยนแปลง
+            sendUpdate();
         }
 
-        function updateMyDataToFirebase() {
-            if (!myPlayerRef) return;
-            myPlayerRef.set({
+        function sendUpdate() {
+            if (!roomId) return;
+            socket.emit('player_update', {
+                roomId,
+                playerId: myId,
                 score: myScore,
                 color: myColor,
                 target: currentTarget,
-                quiz: activeQuiz || null
+                quiz: activeQuiz
             });
         }
 
+        socket.on('update_room_players', (roomData) => {
+            players = roomData || {};
+            delete players[myId]; // ตัดตัวเองออกจากการแสดงผลรายชื่อเพื่อท้าดวล
+            updateLobbyUI();
+            checkForIncomingQuiz();
+        });
+
         function updateLobbyUI() {
-            let list = [];
+            let list = [{ id: myId, score: myScore }];
             for (let id in players) {
                 list.push({ id, score: players[id].score });
             }
@@ -240,20 +233,18 @@
 
             let playerHtml = '';
             for (let id in players) {
-                if (id !== myId) {
-                    let pInfo = players[id];
-                    playerHtml += `
-                        <div class="player-card">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span class="color-badge" style="background-color: ${pInfo.color};"></span>
-                                <span style="font-weight: bold;">${id}</span>
-                            </div>
-                            <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
+                let pInfo = players[id];
+                playerHtml += `
+                    <div class="player-card">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="color-badge" style="background-color: ${pInfo.color};"></span>
+                            <span style="font-weight: bold;">${id}</span>
                         </div>
-                    `;
-                }
+                        <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
+                    </div>
+                `;
             }
-            document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีผู้เล่นอื่นในห้องนี้</p>';
+            document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีผู้เล่นอื่นในห้องนี้ (ชวนเพื่อนมากรอกรหัสเดียวกันสิ!)</p>';
         }
 
         function openCreatorModal(targetId) {
@@ -294,13 +285,12 @@
             document.getElementById('answerButtons').style.display = 'none';
             document.getElementById('closeBattleBtn').style.display = 'block';
 
-            updateMyDataToFirebase();
+            sendUpdate();
         }
 
         function checkForIncomingQuiz() {
             if (isBattling && incomingQuizData) return;
 
-            // ตรวจสอบว่ามีผู้เล่นคนอื่นตั้ง target เป็นเรา และมี quiz ส่งมา
             for (let id in players) {
                 let p = players[id];
                 if (p.target === myId && p.quiz && !incomingQuizData) {
@@ -340,7 +330,7 @@
             } else {
                 document.getElementById('battleDesc').innerHTML = '<span style="color: #f44336; font-size: 18px; font-weight: bold;">❌ ผิดครับ! น่าเสียดาย</span>';
             }
-            updateMyDataToFirebase();
+            sendUpdate();
         }
 
         function endBattle() {
@@ -350,7 +340,7 @@
             incomingQuizData = null;
             answeredCurrentQuiz = false;
             document.getElementById('battleOverlay').style.display = 'none';
-            updateMyDataToFirebase();
+            sendUpdate();
         }
     </script>
 </body>
