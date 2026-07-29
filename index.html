@@ -283,7 +283,8 @@
         const speed = 3;
 
         let peer = null;
-        let activeConnection = null;
+        let connections = {}; // เก็บการเชื่อมต่อทั้งหมดแบบ Multi-peer
+        let hostConnection = null; // สำหรับ Client ใช้ติดต่อ Host
         let isHost = false;
         let activeRoomId = '';
         let playersData = {};
@@ -293,7 +294,7 @@
         let currentOpponentId = null;
         let currentQuiz = null;
         let receivedQuizBackup = null;
-        let collisionCooldown = false; // ป้องกันการชนซ้ำซ้อนรัวๆ
+        let collisionCooldown = false;
 
         function toggleRoomInput() {
             const mode = document.getElementById('roomMode').value;
@@ -388,10 +389,11 @@
 
         function connectToHost(targetHostId) {
             let conn = peer.connect(targetHostId);
+            hostConnection = conn;
             setupConnectionEvents(conn);
             
             setTimeout(() => {
-                if (!activeConnection && document.getElementById('loginOverlay').style.display !== 'none') {
+                if (!hostConnection && document.getElementById('loginOverlay').style.display !== 'none') {
                     document.getElementById('connectionStatus').innerText = 'เชื่อมต่อห้องไม่สำเร็จ (ตรวจดูว่า Host เปิดห้องอยู่หรือไม่)';
                 }
             }, 6000);
@@ -399,12 +401,12 @@
 
         function setupConnectionEvents(conn) {
             conn.on('open', () => {
-                activeConnection = conn;
-                currentOpponentId = conn.peer;
+                connections[conn.peer] = conn;
                 if (!isHost) {
+                    hostConnection = conn;
                     startGameSession(activeRoomId);
                 }
-                sendDataDirect({ type: 'UPDATE_POS', id: myId, x: myX, y: myY, color: myColor, score: myScore });
+                broadcastData({ type: 'UPDATE_POS', id: myId, x: myX, y: myY, color: myColor, score: myScore });
             });
 
             conn.on('data', (data) => {
@@ -412,33 +414,53 @@
             });
 
             conn.on('close', () => {
-                activeConnection = null;
+                delete connections[conn.peer];
             });
         }
 
-        function sendDataDirect(data) {
-            if (activeConnection && activeConnection.open) {
-                activeConnection.send(data);
+        function broadcastData(data) {
+            if (isHost) {
+                // Host ส่งข้อมูลกระจายให้ทุกคน
+                for (let peerId in connections) {
+                    if (connections[peerId].open) {
+                        connections[peerId].send(data);
+                    }
+                }
+            } else {
+                // Client ส่งให้ Host คนเดียว (ให้ Host ช่วยกระจายต่อ)
+                if (hostConnection && hostConnection.open) {
+                    hostConnection.send(data);
+                }
+            }
+        }
+
+        function sendDataTo(targetId, data) {
+            if (connections[targetId] && connections[targetId].open) {
+                connections[targetId].send(data);
+            } else if (hostConnection && hostConnection.open) {
+                hostConnection.send(data);
             }
         }
 
         function handleNetworkData(data, conn) {
             if (data.type === 'UPDATE_POS') {
                 playersData[data.id] = { x: data.x, y: data.y, color: data.color, score: data.score };
-                currentOpponentId = data.id;
-                if (isHost && activeConnection && activeConnection.open && activeConnection.peer !== conn.peer) {
-                    activeConnection.send(data);
+                if (isHost) {
+                    // Host ทำหน้าที่กระจายตำแหน่งของผู้เล่นคนนี้ต่อไปยังผู้เล่นคนอื่นๆ ในห้อง
+                    for (let peerId in connections) {
+                        if (peerId !== data.id && connections[peerId].open) {
+                            connections[peerId].send(data);
+                        }
+                    }
                 }
             } else if (data.type === 'PROPOSE_BATTLE') {
-                // ฝั่ง Host ได้รับสัญญาณชนกัน จะทำการสุ่มบทบาทแล้วแจ้งกลับไปยังผู้เล่นทั้งคู่
                 if (isHost) {
                     let participants = [data.sender, data.target];
                     let creator = participants[Math.floor(Math.random() * participants.length)];
                     let responder = participants.find(id => id !== creator);
 
                     let battlePayload = { type: 'START_BATTLE_ASSIGNED', creator, responder };
-                    // ส่งให้ผู้เล่นทั้งสองเครื่องรับทราบตรงกัน
-                    sendDataDirect(battlePayload);
+                    broadcastData(battlePayload);
                     triggerAssignedBattle(creator, responder, null);
                 }
             } else if (data.type === 'START_BATTLE_ASSIGNED') {
@@ -446,12 +468,18 @@
             } else if (data.type === 'SEND_QUIZ') {
                 if (data.responder === myId) {
                     receivedQuizBackup = data.quiz;
+                    currentOpponentId = data.creator;
                     triggerBattleAsResponder(data.creator, data.quiz);
                     document.getElementById('emergencyBtn').style.display = 'inline-block';
+                } else if (isHost) {
+                    // ส่งต่อโจทย์ไปยังผู้รับที่ถูกต้องกรณีเป็น Host ช่วยส่งต่อ
+                    sendDataTo(data.responder, data);
                 }
             } else if (data.type === 'ANSWER_BATTLE') {
                 if (data.creator === myId) {
                     resolveBattleResult(data.responderCorrect);
+                } else if (isHost) {
+                    sendDataTo(data.creator, data);
                 }
             } else if (data.type === 'RESET_GAME') {
                 alert('⚠️ เจ้าของห้องได้ทำการรีเซ็ทเกมใหม่ทั้งหมด!');
@@ -471,7 +499,7 @@
 
             if (moved) {
                 playersData[myId] = { x: myX, y: myY, color: myColor, score: myScore };
-                sendDataDirect({ type: 'UPDATE_POS', id: myId, x: myX, y: myY, color: myColor, score: myScore });
+                broadcastData({ type: 'UPDATE_POS', id: myId, x: myX, y: myY, color: myColor, score: myScore });
             }
 
             if (!collisionCooldown) {
@@ -485,15 +513,14 @@
                             setTimeout(() => { collisionCooldown = false; }, 3000);
 
                             if (isHost) {
-                                // Host ทำหน้าที่สุ่มทันทีเมื่อมีการชน
                                 let participants = [myId, id];
                                 let creator = participants[Math.floor(Math.random() * participants.length)];
                                 let responder = participants.find(user => user !== creator);
-                                sendDataDirect({ type: 'START_BATTLE_ASSIGNED', creator, responder });
+                                let payload = { type: 'START_BATTLE_ASSIGNED', creator, responder };
+                                broadcastData(payload);
                                 triggerAssignedBattle(creator, responder, null);
                             } else {
-                                // Client ส่งสัญญาณขอให้ Host สุ่มบทบาทให้
-                                sendDataDirect({ type: 'PROPOSE_BATTLE', sender: myId, target: id });
+                                broadcastData({ type: 'PROPOSE_BATTLE', sender: myId, target: id });
                             }
                             break;
                         }
@@ -566,20 +593,17 @@
 
             currentQuiz = { pVal, qVal, connector: conn, truth };
 
-            if (activeConnection && activeConnection.open) {
-                activeConnection.send({
-                    type: 'SEND_QUIZ',
-                    creator: myId,
-                    responder: currentOpponentId,
-                    quiz: currentQuiz
-                });
-                document.getElementById('creatorSection').style.display = 'none';
-                document.getElementById('panelTitle').innerText = '⏳ ส่งโจทย์แล้ว กำลังรอผู้ตอบ...';
-                document.getElementById('battleStatus').innerText = 'รอให้อีกฝ่ายตอบคำถาม...';
-            } else {
-                alert('⚠️ การเชื่อมต่อขัดข้อง กรุณากด "กลับสู่หน้าแผนที่" แล้วลองใหม่อีกครั้ง');
-                document.getElementById('backMapBtn').style.display = 'block';
-            }
+            let payload = {
+                type: 'SEND_QUIZ',
+                creator: myId,
+                responder: currentOpponentId,
+                quiz: currentQuiz
+            };
+
+            sendDataTo(currentOpponentId, payload);
+            document.getElementById('creatorSection').style.display = 'none';
+            document.getElementById('panelTitle').innerText = '⏳ ส่งโจทย์แล้ว กำลังรอผู้ตอบ...';
+            document.getElementById('battleStatus').innerText = 'รอให้อีกฝ่ายตอบคำถาม...';
         }
 
         function answerQuiz(userAns) {
@@ -593,13 +617,12 @@
             }
             saveScore();
 
-            if (activeConnection && activeConnection.open) {
-                activeConnection.send({
-                    type: 'ANSWER_BATTLE',
-                    creator: currentOpponentId,
-                    responderCorrect: isCorrect
-                });
-            }
+            let payload = {
+                type: 'ANSWER_BATTLE',
+                creator: currentOpponentId,
+                responderCorrect: isCorrect
+            };
+            sendDataTo(currentOpponentId, payload);
 
             document.getElementById('responderSection').style.display = 'none';
             document.getElementById('panelTitle').innerText = '🏁 ตอบคำถามเสร็จสิ้น!';
@@ -658,7 +681,7 @@
 
         function resetAllGameData() {
             if (confirm('⚠️ ต้องการรีเซ็ทเกมทั้งหมดสำหรับทุกเครื่องใช่หรือไม่?')) {
-                sendDataDirect({ type: 'RESET_GAME' });
+                broadcastData({ type: 'RESET_GAME' });
                 localStorage.clear();
                 location.reload();
             }
