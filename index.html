@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เกมประลองตรรกศาสตร์ (Local Mode)</title>
+    <title>เกมประลองตรรกศาสตร์ (Online Mode)</title>
+    <!-- โหลด Firebase SDK จาก CDN -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
     <style>
         body {
             background-color: #121212;
@@ -83,7 +86,7 @@
 
     <!-- หน้า login เข้าห้อง -->
     <div id="loginOverlay" class="container">
-        <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์</h2>
+        <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์ (Online)</h2>
         <input type="text" id="usernameInput" placeholder="ชื่อผู้เล่น..." maxlength="12">
         <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก..." maxlength="4">
         <br>
@@ -161,15 +164,22 @@
     </div>
 
     <script>
+        // ตั้งค่า Firebase สาธารณะสำหรับทดสอบระบบ
+        const firebaseConfig = {
+            databaseURL: "https://logic-game-test-default-rtdb.asia-southeast1.firebasedatabase.app/"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
         let myId = '', roomId = '', myScore = 0;
         let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
-        let players = {}; // เก็บข้อมูลผู้เล่นในห้อง
+        let players = {};
         let currentTarget = '';
         let activeQuiz = null;
         let incomingQuizData = null;
         let isBattling = false;
         let answeredCurrentQuiz = false;
-        let channel = null;
+        let myPlayerRef = null;
 
         function joinGame() {
             myId = document.getElementById('usernameInput').value.trim();
@@ -180,55 +190,42 @@
                 return;
             }
 
-            // สร้าง BroadcastChannel แยกตามรหัสห้อง
-            channel = new BroadcastChannel('logic_game_room_' + roomId);
-            channel.onmessage = (event) => handleChannelMessage(event.data);
-
             document.getElementById('loginOverlay').style.display = 'none';
             document.getElementById('gameArea').style.display = 'block';
             document.getElementById('barId').innerText = myId;
             document.getElementById('displayRoomId').innerText = roomId;
             document.getElementById('myColorBox').style.backgroundColor = myColor;
 
-            // ส่งสัญญาณแจ้งเตือนการเข้าห้อง
-            broadcastState();
+            // อ้างอิงตำแหน่งข้อมูลผู้เล่นคนนี้ใน Firebase ตามรหัสห้อง
+            myPlayerRef = db.ref('rooms/' + roomId + '/players/' + myId);
+            
+            // ลบข้อมูลตัวเองออกเมื่อปิดหน้าเว็บ
+            myPlayerRef.onDisconnect().remove();
 
-            // ส่งสัญญาณซิงค์ทุกๆ 2 วินาที
-            setInterval(() => {
-                if (roomId) broadcastState();
-            }, 2000);
-        }
+            // ส่งข้อมูลอัปเดตสถานะแรกเริ่ม
+            updateMyDataToFirebase();
 
-        function broadcastState() {
-            if (!channel) return;
-            channel.postMessage({
-                type: 'SYNC',
-                playerId: myId,
-                score: myScore,
-                color: myColor,
-                target: currentTarget,
-                quiz: activeQuiz
+            // ฟังการเปลี่ยนแปลงของห้องทั้งหมดแบบ Realtime
+            db.ref('rooms/' + roomId + '/players').on('value', (snapshot) => {
+                let data = snapshot.val() || {};
+                players = data;
+                updateLobbyUI();
+                checkForIncomingQuiz();
             });
         }
 
-        function handleChannelMessage(data) {
-            if (data.type === 'SYNC') {
-                if (data.playerId === myId) return; // ไม่สนใจตัวเอง
-
-                players[data.playerId] = {
-                    score: data.score,
-                    color: data.color,
-                    target: data.target,
-                    quiz: data.quiz
-                };
-
-                updateLobbyUI();
-                checkForIncomingQuiz(data.playerId, data);
-            }
+        function updateMyDataToFirebase() {
+            if (!myPlayerRef) return;
+            myPlayerRef.set({
+                score: myScore,
+                color: myColor,
+                target: currentTarget,
+                quiz: activeQuiz || null
+            });
         }
 
         function updateLobbyUI() {
-            let list = [{ id: myId, score: myScore }];
+            let list = [];
             for (let id in players) {
                 list.push({ id, score: players[id].score });
             }
@@ -243,16 +240,18 @@
 
             let playerHtml = '';
             for (let id in players) {
-                let pInfo = players[id];
-                playerHtml += `
-                    <div class="player-card">
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <span class="color-badge" style="background-color: ${pInfo.color};"></span>
-                            <span style="font-weight: bold;">${id}</span>
+                if (id !== myId) {
+                    let pInfo = players[id];
+                    playerHtml += `
+                        <div class="player-card">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span class="color-badge" style="background-color: ${pInfo.color};"></span>
+                                <span style="font-weight: bold;">${id}</span>
+                            </div>
+                            <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
                         </div>
-                        <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
-                    </div>
-                `;
+                    `;
+                }
             }
             document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีผู้เล่นอื่นในห้องนี้</p>';
         }
@@ -295,30 +294,34 @@
             document.getElementById('answerButtons').style.display = 'none';
             document.getElementById('closeBattleBtn').style.display = 'block';
 
-            broadcastState();
+            updateMyDataToFirebase();
         }
 
-        function checkForIncomingQuiz(senderId, data) {
-            if (isBattling) return;
+        function checkForIncomingQuiz() {
+            if (isBattling && incomingQuizData) return;
 
-            // เช็คว่ามีคนส่งโจทย์มาหาเราหรือไม่
-            if (data.target === myId && data.quiz && !incomingQuizData) {
-                incomingQuizData = data.quiz;
-                isBattling = true;
-                answeredCurrentQuiz = false;
-                
-                document.getElementById('battleOverlay').style.display = 'flex';
-                document.getElementById('battleTitle').innerText = `🎯 มีโจทย์จาก ${senderId}!`;
-                document.getElementById('creatorSection').style.display = 'none';
-                document.getElementById('responderSection').style.display = 'block';
-                document.getElementById('battleDesc').innerText = `ผู้ท้าชิง ${senderId} ส่งโจทย์ข้อนี้มาให้คุณตอบ:`;
-                
-                let pStr = incomingQuizData.pVal ? 'T' : 'F';
-                let qStr = incomingQuizData.qVal ? 'T' : 'F';
-                document.getElementById('quizQuestion').innerText = `กำหนดให้ P = ${pStr}, Q = ${qStr}\nค่าความจริงของ [ P ${incomingQuizData.symbol} Q ] คืออะไร?`;
-                
-                document.getElementById('answerButtons').style.display = 'block';
-                document.getElementById('closeBattleBtn').style.display = 'none';
+            // ตรวจสอบว่ามีผู้เล่นคนอื่นตั้ง target เป็นเรา และมี quiz ส่งมา
+            for (let id in players) {
+                let p = players[id];
+                if (p.target === myId && p.quiz && !incomingQuizData) {
+                    incomingQuizData = p.quiz;
+                    isBattling = true;
+                    answeredCurrentQuiz = false;
+                    
+                    document.getElementById('battleOverlay').style.display = 'flex';
+                    document.getElementById('battleTitle').innerText = `🎯 มีโจทย์จาก ${id}!`;
+                    document.getElementById('creatorSection').style.display = 'none';
+                    document.getElementById('responderSection').style.display = 'block';
+                    document.getElementById('battleDesc').innerText = `ผู้ท้าชิง ${id} ส่งโจทย์ข้อนี้มาให้คุณตอบ:`;
+                    
+                    let pStr = incomingQuizData.pVal ? 'T' : 'F';
+                    let qStr = incomingQuizData.qVal ? 'T' : 'F';
+                    document.getElementById('quizQuestion').innerText = `กำหนดให้ P = ${pStr}, Q = ${qStr}\nค่าความจริงของ [ P ${incomingQuizData.symbol} Q ] คืออะไร?`;
+                    
+                    document.getElementById('answerButtons').style.display = 'block';
+                    document.getElementById('closeBattleBtn').style.display = 'none';
+                    break;
+                }
             }
         }
 
@@ -337,7 +340,7 @@
             } else {
                 document.getElementById('battleDesc').innerHTML = '<span style="color: #f44336; font-size: 18px; font-weight: bold;">❌ ผิดครับ! น่าเสียดาย</span>';
             }
-            broadcastState();
+            updateMyDataToFirebase();
         }
 
         function endBattle() {
@@ -347,7 +350,7 @@
             incomingQuizData = null;
             answeredCurrentQuiz = false;
             document.getElementById('battleOverlay').style.display = 'none';
-            broadcastState();
+            updateMyDataToFirebase();
         }
     </script>
 </body>
