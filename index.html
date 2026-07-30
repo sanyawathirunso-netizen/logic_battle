@@ -2,388 +2,788 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เกมประลองตรรกศาสตร์ (P2P Direct)</title>
-    <!-- โหลด PeerJS จาก CDN สำหรับเชื่อมต่อข้ามเครื่องโดยตรง -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2-Player Online Logic Game + Spectator</title>
+    <!-- PeerJS สำหรับเชื่อมต่อแบบ Realtime -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- JS-Confetti สำหรับเอฟเฟกต์เฉลิมฉลอง -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
     <style>
-        body {
-            background-color: #121212;
-            color: #ffffff;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            -webkit-user-select: none;
+        * { box-sizing: border-box; font-family: 'Sarabun', system-ui, -apple-system, sans-serif; touch-action: manipulation; }
+        body { background: #f0f2f5; padding: 10px; margin: 0; display: flex; justify-content: center; overflow-x: hidden; }
+        .card { background: white; border-radius: 16px; padding: 16px; max-width: 900px; width: 100%; box-shadow: 0 4px 16px rgba(0,0,0,0.1); position: relative; }
+        
+        .setup-box { background: #e8f0fe; padding: 14px; border-radius: 12px; margin-bottom: 15px; text-align: center; }
+        .role-btn { padding: 8px 14px; border: none; background: #1a73e8; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; margin: 4px; }
+        .role-btn.spec { background: #f9ab00; }
+        
+        .input-team-name { padding: 8px; border: 1px solid #1a73e8; border-radius: 6px; margin: 6px 0; font-size: 14px; text-align: center; width: 80%; max-width: 280px; }
+
+        .status-bar { display: flex; justify-content: space-between; align-items: center; background: #5f6368; color: white; padding: 10px 16px; border-radius: 12px; margin-bottom: 10px; font-weight: bold; font-size: 15px; }
+        .status-bar.connected { background: #34a853; }
+        .timer-box { background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 8px; }
+        .timer-box.active { background: #ea4335; }
+
+        /* สกอร์บอร์ด */
+        .scoreboard { display: flex; gap: 10px; margin-bottom: 15px; }
+        .score-box { flex: 1; background: #f8f9fa; border: 2px solid #dadce0; border-radius: 12px; padding: 8px; text-align: center; }
+        .score-box.p1 { border-color: #1a73e8; background: #e8f0fe; }
+        .score-box.p2 { border-color: #34a853; background: #e6f4ea; }
+        .score-title { font-size: 13px; font-weight: bold; color: #5f6368; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .score-num { font-size: 22px; font-weight: bold; color: #202124; margin-top: 2px; }
+
+        .game-layout { display: flex; flex-direction: column; gap: 12px; }
+        @media (min-width: 768px) { 
+            .game-layout { 
+                display: grid; 
+                grid-template-columns: 1.1fr 1fr; 
+                align-items: start; 
+            }
+            #panel-bank { grid-row: 1 / span 2; grid-column: 1; }
+            #panel-assembly { grid-row: 1; grid-column: 2; }
+            #panel-answer { grid-row: 2; grid-column: 2; }
+        }
+        
+        .panel { background: #f8f9fa; border: 2px dashed #dadce0; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; }
+        .panel-title { font-weight: bold; color: #1a73e8; margin-bottom: 10px; text-align: center; font-size: 15px; }
+        
+        .add-stmt-box { background: #ffffff; border: 1px solid #aecbfa; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
+        .add-stmt-box input[type="text"] { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 6px; font-size: 13px; }
+        .add-stmt-box .form-row { display: flex; gap: 6px; align-items: center; }
+        .add-stmt-box select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; font-size: 12px; }
+        .btn-add { background: #34a853; color: white; border: none; border-radius: 4px; padding: 6px 12px; font-size: 12px; font-weight: bold; cursor: pointer; flex: 1; }
+
+        .stmt-list { max-height: 240px; overflow-y: auto; padding-right: 4px; }
+        .section-label { font-size: 12px; font-weight: bold; color: #5f6368; margin: 6px 0 4px; }
+        .drag-item { background: white; border: 2px solid #aecbfa; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; font-weight: bold; color: #202124; font-size: 13px; user-select: none; word-break: break-word; }
+        .drag-item.op { border-color: #fbbc04; background: #fef7e0; color: #b06000; text-align: center; }
+        .drag-item.selected-item { border-color: #1a73e8; background: #e8f0fe; }
+        
+        .assembly-box { display: flex; flex-direction: column; gap: 8px; justify-content: center; align-items: center; background: #ffffff; border: 2px dashed #1a73e8; border-radius: 8px; padding: 12px; min-height: 180px; }
+        .drop-slot { width: 100%; min-height: 48px; border: 2px dashed #bdc1c6; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 6px; background: #fafafa; font-size: 12px; color: #9aa0a6; text-align: center; cursor: pointer; }
+        .drop-slot.op-slot { width: 85%; min-height: 40px; border-color: #fbbc04; background: #fffdef; }
+        
+        .btn-group-control { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+        .btn-ctrl { color: white; border: none; border-radius: 8px; padding: 10px; font-weight: bold; font-size: 13px; cursor: pointer; width: 100%; display: none; }
+        .btn-next-q { background: #1a73e8; }
+        .btn-save-sheet { background: #0f9d58; }
+        .btn-reset-all { background: #ea4335; }
+
+        .choice-btn-group { display: flex; gap: 8px; }
+        .choice-btn { flex: 1; padding: 12px; border: 2px solid #ccc; background: white; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; font-size: 15px; }
+        .choice-btn.selected { background: #e8f0fe; border-color: #1a73e8; color: #1a73e8; }
+        
+        .action-btn { width: 100%; padding: 14px; background: #34a853; color: white; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer; margin-top: 12px; }
+        .action-btn:disabled { background: #9aa0a6; cursor: not-allowed; }
+        
+        .feedback { margin-top: 12px; padding: 12px; border-radius: 8px; text-align: center; font-weight: bold; font-size: 14px; display: none; line-height: 1.6; }
+        .feedback.correct { background: #e6f4ea; color: #137333; border: 1px solid #34a853; display: block; }
+        .feedback.wrong { background: #fce8e6; color: #c5221f; border: 1px solid #ea4335; display: block; }
+        
+        .disabled-panel { opacity: 0.3; pointer-events: none; }
+
+        .big-red-cross {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            color: #ea4335;
+            font-size: 140px;
+            font-weight: 900;
+            pointer-events: none;
+            z-index: 9999;
             user-select: none;
+            line-height: 1;
+            filter: drop-shadow(0px 8px 24px rgba(234, 67, 53, 0.4));
+            animation: bigCrossPop 1.6s ease-out forwards;
         }
-        .container {
-            background: #252525;
-            border: 2px solid #4caf50;
-            padding: 25px;
-            border-radius: 12px;
-            text-align: center;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 0 20px rgba(76,175,80,0.3);
-            box-sizing: border-box;
+
+        @keyframes bigCrossPop {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.2) rotate(-15deg); }
+            20% { opacity: 1; transform: translate(-50%, -50%) scale(1.2) rotate(5deg); }
+            35% { transform: translate(-50%, -50%) scale(1) rotate(0deg); }
+            70% { opacity: 1; transform: translate(-50%, -60%) scale(1.05) rotate(0deg); }
+            100% { opacity: 0; transform: translate(-50%, -100%) scale(0.8) rotate(10deg); }
         }
-        input, select, button {
-            padding: 10px;
-            font-size: 15px;
-            width: 90%;
-            background: #333;
-            color: white;
-            border: 1px solid #555;
-            border-radius: 6px;
-            margin: 8px 0;
-            text-align: center;
-        }
-        .btn-action { background-color: #4caf50; color: white; font-weight: bold; cursor: pointer; border: none; }
-        .btn-action:hover { background-color: #45a049; }
-        
-        #gameArea { display: none; width: 100%; max-width: 450px; }
-        .player-card {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #333;
-            padding: 10px 15px;
-            margin: 6px 0;
-            border-radius: 6px;
-            border-left: 5px solid #00bcd4;
-        }
-        .color-badge {
-            width: 25px; height: 25px; border-radius: 50%; display: inline-block; border: 2px solid #fff;
-        }
-        #scoreboard {
-            background: rgba(37, 37, 37, 0.9);
-            border: 2px solid #4caf50;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            text-align: left;
-        }
-        #scoreboard h4 { margin: 0 0 8px 0; color: #ffeb3b; text-align: center; border-bottom: 1px solid #555; padding-bottom: 4px; }
-        #scoreList { list-style: none; padding: 0; margin: 0; }
-        #scoreList li { display: flex; justify-content: space-between; margin: 4px 0; font-size: 14px; }
-        
-        #battleOverlay {
-            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.95); flex-direction: column; align-items: center; justify-content: center; z-index: 999; text-align: center; padding: 15px; box-sizing: border-box;
-        }
-        .battle-box {
-            background: #252525; border: 2px solid #ff9800; padding: 25px; border-radius: 12px; max-width: 380px; width: 100%; box-shadow: 0 0 25px rgba(255, 152, 0, 0.4);
-        }
-        .btn-battle { background-color: #ff9800; font-weight: bold; cursor: pointer; color: #000; border: none; }
     </style>
 </head>
 <body>
 
-    <!-- หน้า login เข้าห้อง -->
-    <div id="loginOverlay" class="container">
-        <h2 style="color: #4caf50; margin-top:0;">📊 ประลองตรรกศาสตร์</h2>
-        <input type="text" id="usernameInput" placeholder="ชื่อผู้เล่น..." maxlength="12">
-        <input type="text" id="roomCodeInput" placeholder="รหัสห้อง 4 หลัก (เช่น 1234)..." maxlength="4">
-        <br>
-        <button onclick="joinGame()" class="btn-action">เข้าสู่ห้องประลอง</button>
-        <p id="statusMsg" style="font-size: 12px; color: #ffeb3b; margin-top: 8px;"></p>
-    </div>
+<div class="card">
+    <!-- ส่วนตั้งค่าห้อง -->
+    <div class="setup-box" id="setup-box">
+        <div id="step-choice">
+            <button class="role-btn" onclick="showHostInput()">เครื่องที่ 1 (ผู้สร้างห้อง)</button>
+            <button class="role-btn" onclick="showJoinInput()">เครื่องที่ 2 (ผู้เล่น)</button>
+            <button class="role-btn spec" onclick="showSpectatorInput()">👀 โหมดผู้ชม (Spectator)</button>
+        </div>
 
-    <!-- หน้าหลักเกม (Lobby) -->
-    <div id="gameArea">
-        <div class="container" style="max-width: 100%;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <span>👤 <strong id="barId" style="color:#4caf50;">-</strong></span>
-                <span>🏠 ห้อง: <strong id="displayRoomId" style="color:#ffeb3b;">-</strong></span>
-                <span id="myColorBox" class="color-badge"></span>
-            </div>
+        <div id="step-host" style="display: none;">
+            <div><input type="text" id="host-team-input" class="input-team-name" placeholder="ใส่ชื่อทีม P1"></div>
+            <button class="role-btn" onclick="initHost()">สร้างห้องเล่นเกม</button>
+        </div>
 
-            <div id="scoreboard">
-                <h4>🏆 ตารางคะแนนรวม</h4>
-                <ul id="scoreList"></ul>
-            </div>
+        <div id="step-host-waiting" style="display: none;">
+            <b>ID ห้องของคุณ: <span id="my-room-id" style="color: #1a73e8; font-size: 20px;">กำลังสร้าง...</span></b>
+            <div style="font-size: 12px; color: #5f6368; margin-top: 4px;">ให้ผู้เล่นและผู้ชมกรอก ID นี้เพื่อเชื่อมต่อ</div>
+        </div>
 
-            <h3 style="color: #00bcd4; margin: 10px 0 5px 0; font-size: 16px;">👥 รายชื่อผู้เล่นในห้อง (คลิกเพื่อสร้างโจทย์ท้าดวล)</h3>
-            <div id="playerListContainer" style="max-height: 200px; overflow-y: auto;">
-                <p style="color: #888; font-size: 13px;">กำลังเชื่อมต่อเข้าห้อง...</p>
-            </div>
+        <div id="step-join" style="display: none;">
+            <div><input type="text" id="join-team-input" class="input-team-name" placeholder="ใส่ชื่อทีม P2"></div>
+            <div><input type="number" id="join-id-input" class="input-team-name" placeholder="กรอก ID 4 หลัก"></div>
+            <button class="role-btn" onclick="initJoin()">เชื่อมต่อเข้าห้อง</button>
+        </div>
+
+        <div id="step-spectator" style="display: none;">
+            <div><input type="number" id="spec-id-input" class="input-team-name" placeholder="กรอก ID 4 หลักของห้อง"></div>
+            <button class="role-btn spec" onclick="initSpectator()">เข้าชมการแข่งขัน</button>
         </div>
     </div>
 
-    <!-- หน้าต่างสร้างโจทย์และตอบโจทย์ -->
-    <div id="battleOverlay">
-        <div class="battle-box">
-            <h3 id="battleTitle" style="color: #ff9800; margin-top:0;">📝 สร้างโจทย์ตรรกศาสตร์</h3>
+    <!-- แถบสถานะ -->
+    <div class="status-bar" id="status-bar">
+        <div id="conn-status">🔴 รอดำเนินการเชื่อมต่อ...</div>
+        <div class="timer-box" id="timer-box-ui">⏱️ เวลา: <span id="timer">5</span>s</div>
+    </div>
+
+    <!-- สกอร์บอร์ด -->
+    <div class="scoreboard">
+        <div class="score-box p1">
+            <div class="score-title" id="title-p1">🎯 ทีม P1</div>
+            <div class="score-num" id="score-p1">0</div>
+        </div>
+        <div class="score-box p2">
+            <div class="score-title" id="title-p2">⭐ ทีม P2</div>
+            <div class="score-num" id="score-p2">0</div>
+        </div>
+    </div>
+
+    <div class="game-layout">
+        <!-- 1. คลังโจทย์ (ซ่อนในโหมดผู้ชม) -->
+        <div class="panel disabled-panel" id="panel-bank">
+            <div class="panel-title">1. เลือก/เพิ่มประโยค & ตัวเชื่อม</div>
             
-            <div id="creatorSection">
-                <p id="targetPlayerLabel" style="font-size: 13px; color: #ccc; margin-bottom: 10px;"></p>
-                <div style="text-align: left; margin: 0 auto; width: 90%;">
-                    <label style="font-size: 13px; color: #00bcd4;">ค่า P:</label>
-                    <select id="selectP">
-                        <option value="true">T (จริง)</option>
-                        <option value="false">F (เท็จ)</option>
+            <div class="add-stmt-box">
+                <input type="text" id="new-stmt-text" placeholder="พิมพ์ประโยคข้อความใหม่ที่นี่...">
+                <div class="form-row">
+                    <label style="font-size: 12px; font-weight: bold;">เฉลยประโยคนี้:</label>
+                    <select id="new-stmt-val">
+                        <option value="T">จริง (T)</option>
+                        <option value="F">เท็จ (F)</option>
                     </select>
-                    
-                    <label style="font-size: 13px; color: #00bcd4;">ตัวเชื่อม:</label>
-                    <select id="selectConnector">
-                        <option value="AND">∧ (และ)</option>
-                        <option value="OR">∨ (หรือ)</option>
-                        <option value="IF">→ (ถ้า...แล้ว...)</option>
-                        <option value="IFF">↔ (ก็ต่อเมื่อ)</option>
-                    </select>
-
-                    <label style="font-size: 13px; color: #00bcd4;">ค่า Q:</label>
-                    <select id="selectQ">
-                        <option value="true">T (จริง)</option>
-                        <option value="false">F (เท็จ)</option>
-                    </select>
+                    <button class="btn-add" onclick="addNewStatement()">➕ เพิ่มโจทย์</button>
                 </div>
-                <button onclick="sendQuizToTarget()" class="btn-battle" style="margin-top: 15px; padding: 10px; width: 90%;">ส่งโจทย์ให้เพื่อนตอบ 🚀</button>
-                <button onclick="endBattle()" style="background: #555; margin-top: 5px; border:none; padding:8px; width: 90%; border-radius:6px; cursor:pointer; color:white;">ยกเลิก</button>
             </div>
 
-            <div id="responderSection" style="display: none;">
-                <p id="battleDesc" style="font-size: 14px; color: #ccc;"></p>
-                <p id="quizQuestion" style="font-size: 18px; color: #ffeb3b; font-weight: bold; margin: 15px 0;"></p>
-                
-                <div id="answerButtons">
-                    <button onclick="answerQuiz(true)" style="background-color: #4caf50; width: 45%; font-size: 16px; cursor:pointer; border:none; padding:12px; border-radius:6px; color:white; font-weight:bold;">T (True)</button>
-                    <button onclick="answerQuiz(false)" style="background-color: #f44336; width: 45%; font-size: 16px; cursor:pointer; border:none; padding:12px; border-radius:6px; color:white; font-weight:bold; margin-left: 5px;">F (False)</button>
-                </div>
-                
-                <button id="closeBattleBtn" onclick="endBattle()" class="btn-action" style="display:none; margin-top: 15px;">กลับสู่หน้าหลัก</button>
+            <div class="section-label">📌 ประโยคข้อความ:</div>
+            <div class="stmt-list" id="stmt-container">
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="F">"√3 เป็นจำนวนตรรกยะ"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="T">"π เป็นจำนวนอตรรกยะ"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="F">"ผกผันการบวกของ 0 คือ 1"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="F">"2³ = 6"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="F">"1 - 2 = 1"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="F">"√2 = 1.5"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="T">"0 เป็นจำนวนคู่"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="T">"(-1)² > 0"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="T">"2 เป็นจำนวนเฉพาะ"</div>
+                <div class="drag-item" onclick="handleItemClick(this)" data-type="stmt" data-val="T">"1/9 = 0.111..."</div>
             </div>
+
+            <div class="section-label">🔗 ตัวเชื่อม:</div>
+            <div class="drag-item op" onclick="handleItemClick(this)" data-type="op" data-symbol="∧">และ (∧)</div>
+            <div class="drag-item op" onclick="handleItemClick(this)" data-type="op" data-symbol="∨">หรือ (∨)</div>
+            <div class="drag-item op" onclick="handleItemClick(this)" data-type="op" data-symbol="→">ถ้า...แล้ว (→)</div>
+            <div class="drag-item op" onclick="handleItemClick(this)" data-type="op" data-symbol="↔">ก็ต่อเมื่อ (↔)</div>
+        </div>
+
+        <!-- 2. แท่นตั้งโจทย์สด (ย้ายมาอยู่ฝั่งซ้ายในโหมดผู้ชม) -->
+        <div class="panel" id="panel-assembly">
+            <div class="panel-title" id="assembly-title-ui">2. แท่นตั้งโจทย์สด</div>
+            <div class="assembly-box">
+                <div class="drop-slot" id="slot-stmt1" onclick="handleSlotClick(this)" data-accept="stmt">แตะเพื่อวาง "ประพจน์แรก"</div>
+                <div class="drop-slot op-slot" id="slot-op" onclick="handleSlotClick(this)" data-accept="op">แตะเพื่อวาง "ตัวเชื่อม"</div>
+                <div class="drop-slot" id="slot-stmt2" onclick="handleSlotClick(this)" data-accept="stmt">แตะเพื่อวาง "ประพจน์หลัง"</div>
+            </div>
+            <div class="btn-group-control">
+                <button class="btn-ctrl btn-next-q" id="btn-next-q" onclick="nextQuestion()">⏭️ เริ่มข้อต่อไป (สลับบทบาท)</button>
+                <button class="btn-ctrl btn-save-sheet" id="btn-save-sheet" onclick="saveToGoogleSheet()">📊 บันทึกคะแนนลง Google Sheet</button>
+                <button class="btn-ctrl btn-reset-all" id="btn-reset-all" onclick="resetAllBoard()">🧹 รีเซ็ตคะแนนทั้งหมด</button>
+            </div>
+        </div>
+
+        <!-- 3. ส่วนเลือกคำตอบ (ย้ายมาอยู่ฝั่งขวาในโหมดผู้ชม) -->
+        <div class="panel disabled-panel" id="panel-answer">
+            <div class="panel-title" id="answer-title-ui">3. เลือกคำตอบ</div>
+            <div class="choice-btn-group">
+                <button class="choice-btn" onclick="selectChoice('T', this)">จริง (T)</button>
+                <button class="choice-btn" onclick="selectChoice('F', this)">เท็จ (F)</button>
+            </div>
+            <button class="action-btn" id="submit-btn" onclick="checkAnswer()">✔️ ส่งคำตอบ</button>
         </div>
     </div>
 
-    <script>
-        let peer = null;
-        let myId = '', roomId = '', myScore = 0;
-        let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
-        let connections = {}; // เก็บการเชื่อมต่อกับผู้เล่นอื่น
-        let playersInfo = {}; // เก็บข้อมูลคะแนนและสถานะ
-        let currentTarget = '';
-        let activeQuiz = null;
-        let incomingQuizData = null;
-        let isBattling = false;
-        let answeredCurrentQuiz = false;
+    <div id="feedback" class="feedback"></div>
+</div>
 
-        function joinGame() {
-            myId = document.getElementById('usernameInput').value.trim();
-            roomId = document.getElementById('roomCodeInput').value.trim();
+<script>
+    let peer = null;
+    let conn = null;
+    let myRole = ''; 
+    let currentCreator = 'P1'; 
+    
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbykOtV-R0PWRUq-oz-mxPZ2M_ccIvcOb0LRUv8mRWd4iLT3BwoD_OWZJMvB-2HjD9tabg/exec';
+    const TIME_PER_QUESTION = 5; 
+    
+    let timeLeft = TIME_PER_QUESTION;
+    let timerInterval = null;
+    let isAnswerSubmitted = false;
+    let selectedChoice = null;
+    let selectedElement = null;
+    let currentSlotData = { stmt1: null, op: null, stmt2: null, text1: '', textOp: '', text2: '' };
+    
+    let scores = { p1: 0, p2: 0 };
+    let teamNames = { p1: 'ทีม P1', p2: 'ทีม P2' };
+    let spectators = [];
 
-            if (!myId || roomId.length !== 4) {
-                alert('กรุณากรอกชื่อและรหัสห้อง 4 หลักให้ถูกต้อง');
-                return;
-            }
+    const roomId = Math.floor(1000 + Math.random() * 9000).toString();
 
-            document.getElementById('statusMsginnerText = "กำลังเชื่อมต่อเข้าห้อง..."';
-            document.getElementById('statusMsg').innerText = 'กำลังเชื่อมต่อเข้าเครือข่ายห้อง...';
+    function showHostInput() {
+        document.getElementById('step-choice').style.display = 'none';
+        document.getElementById('step-host').style.display = 'block';
+    }
 
-            // ใช้รหัสห้องร่วมกับชื่อผู้เล่นเป็น Peer ID เฉพาะตัว
-            let uniquePeerId = 'logic_room_' + roomId + '_' + myId;
-            peer = new Peer(uniquePeerId);
+    function showJoinInput() {
+        document.getElementById('step-choice').style.display = 'none';
+        document.getElementById('step-join').style.display = 'block';
+    }
 
-            peer.on('open', (id) => {
-                document.getElementById('loginOverlay').style.display = 'none';
-                document.getElementById('gameArea').style.display = 'block';
-                document.getElementById('barId').innerText = myId;
-                document.getElementById('displayRoomId').innerText = roomId;
-                document.getElementById('myColorBox').style.backgroundColor = myColor;
+    function showSpectatorInput() {
+        document.getElementById('step-choice').style.display = 'none';
+        document.getElementById('step-spectator').style.display = 'block';
+    }
 
-                playersInfo[myId] = { score: myScore, color: myColor, target: '', quiz: null };
-                updateLobbyUI();
+    function initHost() {
+        myRole = 'P1';
+        const nameInput = document.getElementById('host-team-input').value.trim();
+        if (nameInput) teamNames.p1 = nameInput;
 
-                // ค้นหาและเชื่อมต่อไปยังผู้เล่นคนอื่นในห้องเดียวกัน (ทดลองวนลูปเชื่อมต่อเลขลำดับ 1-10 ในห้อง)
-                searchAndConnectPeers();
+        document.getElementById('step-host').style.display = 'none';
+        document.getElementById('step-host-waiting').style.display = 'block';
+        
+        peer = new Peer('logic-game-' + roomId);
+        
+        peer.on('open', (id) => {
+            document.getElementById('my-room-id').innerText = roomId;
+            updateTeamNamesUI();
+            updateRoleUI();
+        });
+
+        peer.on('connection', (c) => {
+            c.on('open', () => {
+                c.on('data', (data) => {
+                    if (data.type === 'JOIN_AS_SPECTATOR') {
+                        spectators.push(c);
+                        c.send({ type: 'SYNC_ALL', teamNames, scores, currentCreator, currentSlotData });
+                    } else {
+                        conn = c; 
+                        handleIncomingData(data, c);
+                    }
+                });
             });
+        });
+    }
 
-            peer.on('connection', (conn) => {
-                setupConnection(conn);
-            });
+    function initJoin() {
+        myRole = 'P2';
+        const nameInput = document.getElementById('join-team-input').value.trim();
+        if (nameInput) teamNames.p2 = nameInput;
 
-            peer.on('error', (err) => {
-                console.error(err);
-                alert('เกิดข้อผิดพลาดในการเชื่อมต่อ ลองใหม่อีกครั้ง');
-            });
-        }
+        const inputId = document.getElementById('join-id-input').value;
+        if (!inputId) { alert('กรุณากรอก ID ห้อง'); return; }
 
-        function searchAndConnectPeers() {
-            // ระบบสแกนหาเพื่อนในห้อง 4 หลักเดียวกัน (สมมติชื่อเพื่อนที่เราคาดเดา หรือให้พิมพ์บอกกัน)
-            // วิธีง่ายสุดในโหมด P2P: เมื่อเพื่อนเข้าห้อง ให้พิมพ์ชื่อเพื่อนอีกคนเพื่อกดเชื่อมต่อตรงได้ทันที หรือระบบจะสแกนอัตโนมัติ
-            setTimeout(() => {
-                let friendName = prompt("กรอกชื่อเพื่อนในห้อง '" + roomId + "' ที่ต้องการเชื่อมต่อด้วย:");
-                if (friendName && friendName !== myId) {
-                    let friendPeerId = 'logic_room_' + roomId + '_' + friendName;
-                    let conn = peer.connect(friendPeerId);
-                    setupConnection(conn);
-                }
-            }, 1000);
-        }
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect('logic-game-' + inputId);
+            setupConnection();
+        });
+    }
 
-        function setupConnection(conn) {
+    function initSpectator() {
+        myRole = 'SPECTATOR';
+        const inputId = document.getElementById('spec-id-input').value;
+        if (!inputId) { alert('กรุณากรอก ID ห้อง'); return; }
+
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect('logic-game-' + inputId);
             conn.on('open', () => {
-                connections[conn.peer] = conn;
-                sendMyStateToAll();
+                document.getElementById('setup-box').style.display = 'none';
+                const statusBar = document.getElementById('status-bar');
+                statusBar.classList.add('connected');
+                document.getElementById('conn-status').innerText = '👀 กำลังรับชมการแข่งขัน (Spectator Mode)';
+                conn.send({ type: 'JOIN_AS_SPECTATOR' });
             });
 
             conn.on('data', (data) => {
                 handleIncomingData(data);
             });
+        });
+    }
 
-            conn.on('close', () => {
-                delete connections[conn.peer];
-                updateLobbyUI();
-            });
+    function setupConnection() {
+        conn.on('open', () => {
+            document.getElementById('setup-box').style.display = 'none';
+            const statusBar = document.getElementById('status-bar');
+            statusBar.classList.add('connected');
+            document.getElementById('conn-status').innerText = '🟢 เชื่อมต่อสำเร็จ! (' + teamNames[myRole.toLowerCase()] + ')';
+
+            if (myRole === 'P1') {
+                broadcast({ type: 'SYNC_TEAMS', teamNames: teamNames });
+            } else {
+                conn.send({ type: 'UPDATE_P2_NAME', name: teamNames.p2 });
+            }
+            updateTeamNamesUI();
+            updateRoleUI();
+        });
+
+        conn.on('data', (data) => {
+            handleIncomingData(data);
+        });
+    }
+
+    function broadcast(data) {
+        if (conn && conn.open) conn.send(data);
+        spectators.forEach(s => { if (s.open) s.send(data); });
+    }
+
+    function updateTeamNamesUI() {
+        document.getElementById('title-p1').innerText = `🎯 ${teamNames.p1}`;
+        document.getElementById('title-p2').innerText = `⭐ ${teamNames.p2}`;
+    }
+
+    function updateRoleUI() {
+        const panelBank = document.getElementById('panel-bank');
+        const panelAssembly = document.getElementById('panel-assembly');
+        const panelAnswer = document.getElementById('panel-answer');
+        const btnNextQ = document.getElementById('btn-next-q');
+        const btnSaveSheet = document.getElementById('btn-save-sheet');
+        const btnResetAll = document.getElementById('btn-reset-all');
+
+        if (myRole === 'SPECTATOR') {
+            panelBank.style.display = 'none';
+            panelAssembly.style.display = 'flex';
+            panelAssembly.style.gridColumn = '1';
+            panelAssembly.style.gridRow = '1';
+            
+            panelAnswer.style.display = 'flex';
+            panelAnswer.style.gridColumn = '2';
+            panelAnswer.style.gridRow = '1';
+            panelAnswer.classList.add('disabled-panel');
+
+            btnNextQ.style.display = 'none';
+            btnSaveSheet.style.display = 'none';
+            btnResetAll.style.display = 'none';
+            document.getElementById('assembly-title-ui').innerText = `📺 โจทย์ปัจจุบัน (โหมดผู้ชม)`;
+            document.getElementById('answer-title-ui').innerText = `📊 สถานะการแข่งขัน`;
+            return;
         }
 
-        function sendMyStateToAll() {
-            let payload = {
-                type: 'STATE_UPDATE',
-                playerId: myId,
-                score: myScore,
-                color: myColor,
-                target: currentTarget,
-                quiz: activeQuiz
-            };
-            for (let peerId in connections) {
-                connections[peerId].send(payload);
+        panelBank.style.display = 'flex';
+        panelAssembly.style.display = 'flex';
+        panelAssembly.style.gridColumn = '';
+        panelAssembly.style.gridRow = '';
+        
+        panelAnswer.style.display = 'flex';
+        panelAnswer.style.gridColumn = '';
+        panelAnswer.style.gridRow = '';
+
+        const isMyTurnToCreate = (myRole === currentCreator);
+
+        if (isMyTurnToCreate) {
+            panelBank.classList.remove('disabled-panel');
+            btnNextQ.style.display = 'block';
+            if (myRole === 'P1') {
+                btnSaveSheet.style.display = 'block';
+                btnResetAll.style.display = 'block';
             }
+            panelAnswer.classList.add('disabled-panel');
+            document.getElementById('assembly-title-ui').innerText = `2. แท่นตั้งโจทย์สด (ตาคุณสร้าง)`;
+            document.getElementById('answer-title-ui').innerText = `3. รออีกฝ่ายตอบ`;
+        } else {
+            panelBank.classList.add('disabled-panel');
+            btnNextQ.style.display = 'none';
+            btnSaveSheet.style.display = 'none';
+            btnResetAll.style.display = 'none';
+            panelAnswer.classList.remove('disabled-panel');
+            document.getElementById('assembly-title-ui').innerText = `2. โจทย์จาก (${teamNames[currentCreator.toLowerCase()]})`;
+            document.getElementById('answer-title-ui').innerText = `3. เลือกคำตอบ (ตาคุณตอบ)`;
+        }
+    }
+
+    function addNewStatement() {
+        if (myRole !== currentCreator) return;
+        const textInput = document.getElementById('new-stmt-text');
+        const valSelect = document.getElementById('new-stmt-val');
+        const text = textInput.value.trim();
+
+        if (!text) { alert('กรุณาพิมพ์ประโยคข้อความก่อนกดเพิ่มครับ'); return; }
+
+        const container = document.getElementById('stmt-container');
+        const newItem = document.createElement('div');
+        newItem.className = 'drag-item';
+        newItem.setAttribute('onclick', 'handleItemClick(this)');
+        newItem.setAttribute('data-type', 'stmt');
+        newItem.setAttribute('data-val', valSelect.value);
+        newItem.innerText = `"${text}"`;
+
+        container.prepend(newItem);
+        textInput.value = '';
+    }
+
+    function handleItemClick(elem) {
+        if (myRole !== currentCreator || isAnswerSubmitted) return;
+        document.querySelectorAll('.drag-item').forEach(el => el.classList.remove('selected-item'));
+        selectedElement = elem;
+        elem.classList.add('selected-item');
+    }
+
+    function handleSlotClick(slot) {
+        if (myRole !== currentCreator || !selectedElement || isAnswerSubmitted) return;
+
+        const itemType = selectedElement.getAttribute('data-type');
+        const acceptType = slot.getAttribute('data-accept');
+
+        if (itemType !== acceptType) return;
+
+        if (slot.id === 'slot-stmt1') {
+            currentSlotData.stmt1 = selectedElement.getAttribute('data-val') === 'T';
+            currentSlotData.text1 = selectedElement.innerText;
+        }
+        if (slot.id === 'slot-stmt2') {
+            currentSlotData.stmt2 = selectedElement.getAttribute('data-val') === 'T';
+            currentSlotData.text2 = selectedElement.innerText;
+        }
+        if (slot.id === 'slot-op') {
+            currentSlotData.op = selectedElement.getAttribute('data-symbol');
+            currentSlotData.textOp = selectedElement.innerText;
         }
 
-        function handleIncomingData(data) {
-            if (data.type === 'STATE_UPDATE') {
-                playersInfo[data.playerId] = {
-                    score: data.score,
-                    color: data.color,
-                    target: data.target,
-                    quiz: data.quiz
-                };
-                updateLobbyUI();
-                checkForIncomingQuiz(data.playerId, data);
-            }
+        selectedElement.classList.remove('selected-item');
+        selectedElement = null;
+
+        updateSlotUI();
+        broadcast({ type: 'UPDATE_QUESTION', data: currentSlotData });
+
+        if (currentSlotData.stmt1 !== null && currentSlotData.stmt2 !== null && currentSlotData.op !== null) {
+            broadcast({ type: 'START_TIMER' });
+            startTimer();
         }
+    }
 
-        function updateLobbyUI() {
-            let list = [];
-            for (let id in playersInfo) {
-                list.push({ id, score: playersInfo[id].score });
-            }
-            list.sort((a, b) => b.score - a.score);
+    function updateSlotUI() {
+        setSlotText('slot-stmt1', currentSlotData.text1, 'ประพจน์แรก');
+        setSlotText('slot-op', currentSlotData.textOp, 'ตัวเชื่อม');
+        setSlotText('slot-stmt2', currentSlotData.text2, 'ประพจน์หลัง');
+    }
 
-            let scoreHtml = '';
-            list.forEach(p => {
-                let bold = (p.id === myId) ? 'color: #4caf50; font-weight:bold;' : 'color: #fff;';
-                scoreHtml += `<li style="${bold}"><span>${p.id}</span> <span>⭐ ${p.score} คะแนน</span></li>`;
-            });
-            document.getElementById('scoreList').innerHTML = scoreHtml;
+    function setSlotText(id, text, defaultText) {
+        const slot = document.getElementById(id);
+        if (text) {
+            slot.innerText = text;
+            slot.style.color = '#202124';
+            slot.style.fontWeight = 'bold';
+        } else {
+            slot.innerText = `แตะเพื่อวาง "${defaultText}"`;
+            slot.style.color = '#9aa0a6';
+        }
+    }
 
-            let playerHtml = '';
-            for (let id in playersInfo) {
-                if (id !== myId) {
-                    let pInfo = playersInfo[id];
-                    playerHtml += `
-                        <div class="player-card">
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <span class="color-badge" style="background-color: ${pInfo.color};"></span>
-                                <span style="font-weight: bold;">${id}</span>
-                            </div>
-                            <button onclick="openCreatorModal('${id}')" class="btn-battle" style="width: auto; padding: 6px 12px; font-size: 13px;">สร้างโจทย์ท้าดวล ⚔️</button>
-                        </div>
-                    `;
+    function updateScoreUI() {
+        document.getElementById('score-p1').innerText = scores.p1;
+        document.getElementById('score-p2').innerText = scores.p2;
+    }
+
+    function handleIncomingData(msg, senderConn) {
+        if (msg.type === 'UPDATE_QUESTION') {
+            currentSlotData = msg.data;
+            updateSlotUI();
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'START_TIMER') {
+            startTimer();
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'SHOW_RESULT') {
+            stopTimer();
+            isAnswerSubmitted = true;
+            displayResult(msg.statusType, msg.text);
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'SWITCH_ROLES') {
+            currentCreator = msg.nextCreator;
+            resetSlotsAndFeedback();
+            updateRoleUI();
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'RESET_ALL_BOARD') {
+            currentCreator = 'P1';
+            resetFullBoard();
+            updateRoleUI();
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'UPDATE_SCORE') {
+            scores = msg.scores;
+            updateScoreUI();
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'SYNC_TEAMS') {
+            teamNames = msg.teamNames;
+            updateTeamNamesUI();
+            updateRoleUI();
+            if (myRole === 'P1') spectators.forEach(s => s.send(msg));
+        } else if (msg.type === 'UPDATE_P2_NAME' && myRole === 'P1') {
+            teamNames.p2 = msg.name;
+            updateTeamNamesUI();
+            broadcast({ type: 'SYNC_TEAMS', teamNames: teamNames });
+        } else if (msg.type === 'SYNC_ALL') {
+            teamNames = msg.teamNames;
+            scores = msg.scores;
+            currentCreator = msg.currentCreator;
+            currentSlotData = msg.currentSlotData;
+            updateTeamNamesUI();
+            updateScoreUI();
+            updateSlotUI();
+            updateRoleUI();
+        }
+    }
+
+    function startTimer() {
+        timeLeft = TIME_PER_QUESTION;
+        document.getElementById('timer').innerText = timeLeft;
+        document.getElementById('timer-box-ui').classList.add('active');
+
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            document.getElementById('timer').innerText = timeLeft;
+            if (timeLeft <= 0) {
+                stopTimer();
+                const respondent = (currentCreator === 'P1') ? 'P2' : 'P1';
+                if (myRole === respondent && !isAnswerSubmitted) {
+                    scores[currentCreator.toLowerCase()]++;
+                    updateScoreUI();
+                    broadcast({ type: 'UPDATE_SCORE', scores: scores });
+
+                    const explanation = generateExplanation(`⏰ <b>หมดเวลาตอบ! (${teamNames[currentCreator.toLowerCase()]} ได้ +1 คะแนน)</b>`);
+                    sendResult('wrong', explanation);
                 }
             }
-            document.getElementById('playerListContainer').innerHTML = playerHtml || '<p style="color: #888; font-size: 13px;">ยังไม่มีการเชื่อมต่อกับเพื่อน (กดเชื่อมต่อมุมบนซ้าย)</p>';
+        }, 1000);
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+        document.getElementById('timer-box-ui').classList.remove('active');
+    }
+
+    function selectChoice(val, btnElement) {
+        const respondent = (currentCreator === 'P1') ? 'P2' : 'P1';
+        if (myRole !== respondent || isAnswerSubmitted) return;
+        selectedChoice = val;
+        document.querySelectorAll('.choice-btn').forEach(btn => btn.classList.remove('selected'));
+        btnElement.classList.add('selected');
+    }
+
+    function getActualResult(p, q, op) {
+        switch (op) {
+            case '∧': return p && q;
+            case '∨': return p || q;
+            case '→': return !p || q;
+            case '↔': return p === q;
+        }
+        return false;
+    }
+
+    function generateTruthTableSummary(op) {
+        const cases = [
+            { p: true, q: true },
+            { p: true, q: false },
+            { p: false, q: true },
+            { p: false, q: false }
+        ];
+
+        let html = `<div style="margin-top: 6px; font-size: 12px; border-top: 1px dashed rgba(0,0,0,0.15); padding-top: 6px;">` +
+                   `<b>📋 ตารางสรุปเฉพาะตัวเชื่อม (${currentSlotData.textOp}):</b><div style="display: flex; flex-direction: column; gap: 2px; margin-top: 4px;">`;
+
+        cases.forEach(c => {
+            const res = getActualResult(c.p, c.q, op);
+            const pStr = c.p ? 'T (จริง)' : 'F (เท็จ)';
+            const qStr = c.q ? 'T (จริง)' : 'F (เท็จ)';
+            const resStr = res ? 'T (จริง)' : 'F (เท็จ)';
+            
+            const isCurrentCase = (c.p === currentSlotData.stmt1 && c.q === currentSlotData.stmt2);
+            const style = isCurrentCase 
+                ? 'background: rgba(26, 115, 232, 0.18); font-weight: bold; border-radius: 4px; padding: 2px 6px; border-left: 3px solid #1a73e8;' 
+                : 'padding: 2px 6px; opacity: 0.85;';
+
+            html += `<div style="${style}">${pStr} ${currentSlotData.op} ${qStr} ≡ <b>${resStr}</b> ${isCurrentCase ? '👈 <i>(กรณีข้อนี้)</i>' : ''}</div>`;
+        });
+
+        html += `</div></div>`;
+        return html;
+    }
+
+    function generateExplanation(headerText) {
+        const p = currentSlotData.stmt1;
+        const q = currentSlotData.stmt2;
+        const op = currentSlotData.op;
+        const actualResult = getActualResult(p, q, op);
+
+        const pText = p ? 'จริง (T)' : 'เท็จ (F)';
+        const qText = q ? 'จริง (T)' : 'เท็จ (F)';
+        const ansText = actualResult ? 'จริง (T)' : 'เท็จ (F)';
+
+        const truthTableSummary = generateTruthTableSummary(op);
+
+        return `${headerText}<br>` +
+            `💡 <u>เฉลยคำตอบข้อนี้:</u> <b>${ansText}</b><br>` +
+            `<div style="font-weight: normal; font-size: 13px; margin-top: 4px; text-align: left; background: rgba(0,0,0,0.04); padding: 8px; border-radius: 6px;">` +
+            `• ประพจน์แรก: <b>${pText}</b><br>` +
+            `• ตัวเชื่อม: <b>${currentSlotData.textOp}</b><br>` +
+            `• ประพจน์หลัง: <b>${qText}</b>` +
+            `${truthTableSummary}` +
+            `</div>`;
+    }
+
+    function checkAnswer() {
+        const respondent = (currentCreator === 'P1') ? 'P2' : 'P1';
+        if (myRole !== respondent || isAnswerSubmitted) return;
+        if (currentSlotData.stmt1 === null || currentSlotData.stmt2 === null || !currentSlotData.op) {
+            alert('รอผู้สร้างโจทย์วางโจทย์ให้ครบก่อนครับ');
+            return;
+        }
+        if (!selectedChoice) {
+            alert('กรุณาเลือกคำตอบ จริง หรือ เท็จ');
+            return;
         }
 
-        function openCreatorModal(targetId) {
-            currentTarget = targetId;
-            isBattling = true;
-            answeredCurrentQuiz = false;
-            document.getElementById('battleOverlay').style.display = 'flex';
-            document.getElementById('battleTitle').innerText = `📝 สร้างโจทย์ให้ ${targetId}`;
-            document.getElementById('targetPlayerLabel').innerText = `คุณกำลังสร้างโจทย์ท้าดวล ${targetId}`;
-            document.getElementById('creatorSection').style.display = 'block';
-            document.getElementById('responderSection').style.display = 'none';
+        const p = currentSlotData.stmt1;
+        const q = currentSlotData.stmt2;
+        const actualResult = getActualResult(p, q, currentSlotData.op);
+        const isCorrect = (selectedChoice === (actualResult ? 'T' : 'F'));
+
+        let resultMsg = '';
+        if (isCorrect) {
+            scores[respondent.toLowerCase()]++;
+            updateScoreUI();
+            broadcast({ type: 'UPDATE_SCORE', scores: scores });
+
+            resultMsg = generateExplanation(`🎉 <b>ถูกต้องเก่งมาก! (${teamNames[respondent.toLowerCase()]} ได้ +1 คะแนน)</b>`);
+            sendResult('correct', resultMsg);
+        } else {
+            scores[currentCreator.toLowerCase()]++;
+            updateScoreUI();
+            broadcast({ type: 'UPDATE_SCORE', scores: scores });
+
+            resultMsg = generateExplanation(`❌ <b>ตอบไม่ถูกต้อง! (${teamNames[currentCreator.toLowerCase()]} ได้ +1 คะแนน)</b>`);
+            sendResult('wrong', resultMsg);
         }
+    }
 
-        function sendQuizToTarget() {
-            let pVal = document.getElementById('selectP').value === 'true';
-            let qVal = document.getElementById('selectQ').value === 'true';
-            let conn = document.getElementById('selectConnector').value;
+    function sendResult(statusType, text) {
+        stopTimer();
+        isAnswerSubmitted = true;
+        displayResult(statusType, text);
+        broadcast({ type: 'SHOW_RESULT', statusType: statusType, text: text });
 
-            let symbol = '', truth = false;
-            if (conn === 'AND') { symbol = '∧ (และ)'; truth = pVal && qVal; }
-            else if (conn === 'OR') { symbol = '∨ (หรือ)'; truth = pVal || qVal; }
-            else if (conn === 'IF') { symbol = '→ (ถ้า...แล้ว...)'; truth = !pVal || qVal; }
-            else if (conn === 'IFF') { symbol = '↔ (ก็ต่อเมื่อ)'; truth = pVal === qVal; }
-
-            activeQuiz = { creator: myId, target: currentTarget, pVal, qVal, symbol, truth };
-
-            document.getElementById('creatorSection').style.display = 'none';
-            document.getElementById('responderSection').style.display = 'block';
-            document.getElementById('battleTitle').innerText = '⏳ ส่งโจทย์เรียบร้อย';
-            document.getElementById('battleDesc').innerText = `กำลังรอให้ ${currentTarget} ตอบโจทย์ของคุณ...`;
-            document.getElementById('quizQuestion').innerText = `โจทย์ที่ส่ง:\nP = ${pVal?'T':'F'}, Q = ${qVal?'T':'F'} [ P ${symbol} Q ]`;
-            document.getElementById('answerButtons').style.display = 'none';
-            document.getElementById('closeBattleBtn').style.display = 'block';
-
-            sendMyStateToAll();
+        if (statusType === 'correct') {
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
+        } else {
+            showBigRedCross();
         }
+    }
 
-        function checkForIncomingQuiz(senderId, data) {
-            if (isBattling) return;
-            if (data.target === myId && data.quiz && !incomingQuizData) {
-                incomingQuizData = data.quiz;
-                isBattling = true;
-                answeredCurrentQuiz = false;
-                
-                document.getElementById('battleOverlay').style.display = 'flex';
-                document.getElementById('battleTitle').innerText = `🎯 มีโจทย์จาก ${senderId}!`;
-                document.getElementById('creatorSection').style.display = 'none';
-                document.getElementById('responderSection').style.display = 'block';
-                document.getElementById('battleDesc').innerText = `ผู้ท้าชิง ${senderId} ส่งโจทย์ข้อนี้มาให้คุณตอบ:`;
-                
-                let pStr = incomingQuizData.pVal ? 'T' : 'F';
-                let qStr = incomingQuizData.qVal ? 'T' : 'F';
-                document.getElementById('quizQuestion').innerText = `กำหนดให้ P = ${pStr}, Q = ${qStr}\nค่าความจริงของ [ P ${incomingQuizData.symbol} Q ] คืออะไร?`;
-                
-                document.getElementById('answerButtons').style.display = 'block';
-                document.getElementById('closeBattleBtn').style.display = 'none';
-            }
-        }
+    function displayResult(statusType, text) {
+        const feedback = document.getElementById('feedback');
+        feedback.className = `feedback ${statusType}`;
+        feedback.innerHTML = text;
+        feedback.style.display = 'block';
+    }
 
-        function answerQuiz(userAnswer) {
-            if (answeredCurrentQuiz) return;
-            answeredCurrentQuiz = true;
+    function showBigRedCross() {
+        const cross = document.createElement('div');
+        cross.className = 'big-red-cross';
+        cross.innerText = '✕';
+        document.body.appendChild(cross);
+        setTimeout(() => cross.remove(), 1600);
+    }
 
-            document.getElementById('answerButtons').style.display = 'none';
-            document.getElementById('closeBattleBtn').style.display = 'block';
+    function nextQuestion() {
+        if (myRole !== currentCreator) return;
+        
+        currentCreator = (currentCreator === 'P1') ? 'P2' : 'P1';
+        resetSlotsAndFeedback();
+        
+        broadcast({ type: 'SWITCH_ROLES', nextCreator: currentCreator });
+        updateRoleUI();
+    }
 
-            let correctAns = incomingQuizData ? incomingQuizData.truth : (activeQuiz ? activeQuiz.truth : false);
+    function resetSlotsAndFeedback() {
+        currentSlotData = { stmt1: null, op: null, stmt2: null, text1: '', textOp: '', text2: '' };
+        isAnswerSubmitted = false;
+        selectedChoice = null;
+        updateSlotUI();
 
-            if (userAnswer === correctAns) {
-                myScore += 10;
-                document.getElementById('battleDesc').innerHTML = '<span style="color: #4caf50; font-size: 18px; font-weight: bold;">🎉 ถูกต้อง! คุณได้รับ +10 คะแนน</span>';
-            } else {
-                document.getElementById('battleDesc').innerHTML = '<span style="color: #f44336; font-size: 18px; font-weight: bold;">❌ ผิดครับ! น่าเสียดาย</span>';
-            }
-            sendMyStateToAll();
-        }
+        document.getElementById('feedback').style.display = 'none';
+        document.querySelectorAll('.choice-btn').forEach(btn => btn.classList.remove('selected'));
+        stopTimer();
+        document.getElementById('timer').innerText = TIME_PER_QUESTION;
+    }
 
-        function endBattle() {
-            isBattling = false;
-            currentTarget = '';
-            activeQuiz = null;
-            incomingQuizData = null;
-            answeredCurrentQuiz = false;
-            document.getElementById('battleOverlay').style.display = 'none';
-            sendMyStateToAll();
-        }
-    </script>
+    function resetFullBoard() {
+        scores = { p1: 0, p2: 0 };
+        updateScoreUI();
+        resetSlotsAndFeedback();
+    }
+
+    function resetAllBoard() {
+        if (myRole !== 'P1') return;
+        if (!confirm('ต้องการรีเซ็ตคะแนนและกระดานทั้งหมดใช่หรือไม่?')) return;
+        
+        currentCreator = 'P1';
+        resetFullBoard();
+        updateRoleUI();
+        broadcast({ type: 'RESET_ALL_BOARD' });
+    }
+
+    function saveToGoogleSheet() {
+        if (myRole !== 'P1') return;
+        
+        const data = {
+            team1: teamNames.p1,
+            score1: scores.p1,
+            team2: teamNames.p2,
+            score2: scores.p2,
+            timestamp: new Date().toISOString()
+        };
+
+        const btn = document.getElementById('btn-save-sheet');
+        btn.innerText = '⏳ กำลังบันทึก...';
+        btn.disabled = true;
+
+        fetch(scriptUrl, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        }).then(() => {
+            alert('บันทึกข้อมูลคะแนนลง Google Sheet สำเร็จ!');
+            btn.innerText = '📊 บันทึกคะแนนลง Google Sheet';
+            btn.disabled = false;
+        }).catch(err => {
+            console.error(err);
+            alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+            btn.innerText = '📊 บันทึกคะแนนลง Google Sheet';
+            btn.disabled = false;
+        });
+    }
+</script>
 </body>
 </html>
