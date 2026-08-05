@@ -665,7 +665,7 @@
         let resultMsg = '';
 
         if (isCorrect) {
-            scores[respondent.toLowerCase()] += 10;
+            scores[respondent.toLowerCase()] += 2;
             updateScoreUI();
             broadcast({ type: 'UPDATE_SCORE', scores: scores });
 
