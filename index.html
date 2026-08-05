@@ -563,11 +563,8 @@
                 stopTimer();
                 const respondent = (currentCreator === 'P1') ? 'P2' : 'P1';
                 if (myRole === respondent && !isAnswerSubmitted) {
-                    scores[currentCreator.toLowerCase()]++;
-                    updateScoreUI();
-                    broadcast({ type: 'UPDATE_SCORE', scores: scores });
-
-                    const explanation = generateExplanation(`⏰ <b>หมดเวลาตอบ! (${teamNames[currentCreator.toLowerCase()]} ได้ +1 คะแนน)</b>`);
+                    // ไม่บวกคะแนนให้ใครทั้งสิ้นเมื่อหมดเวลา
+                    const explanation = generateExplanation(`⏰ <b>หมดเวลาตอบ! (ไม่มีฝ่ายใดได้คะแนน)</b>`);
                     sendResult('wrong', explanation);
                 }
             }
@@ -666,19 +663,17 @@
         const isCorrect = (selectedChoice === (actualResult ? 'T' : 'F'));
 
         let resultMsg = '';
+
         if (isCorrect) {
-            scores[respondent.toLowerCase()]++;
+            scores[respondent.toLowerCase()] += 10;
             updateScoreUI();
             broadcast({ type: 'UPDATE_SCORE', scores: scores });
 
-            resultMsg = generateExplanation(`🎉 <b>ถูกต้องเก่งมาก! (${teamNames[respondent.toLowerCase()]} ได้ +1 คะแนน)</b>`);
+            resultMsg = generateExplanation(`🎉 <b>ถูกต้อง! (${teamNames[respondent.toLowerCase()]} ได้ +10 คะแนน)</b>`);
             sendResult('correct', resultMsg);
         } else {
-            scores[currentCreator.toLowerCase()]++;
-            updateScoreUI();
-            broadcast({ type: 'UPDATE_SCORE', scores: scores });
-
-            resultMsg = generateExplanation(`❌ <b>ตอบไม่ถูกต้อง! (${teamNames[currentCreator.toLowerCase()]} ได้ +1 คะแนน)</b>`);
+            // ตอบผิด: ผู้ตั้งโจทย์ไม่ได้คะแนน และไม่มีใครได้คะแนน
+            resultMsg = generateExplanation(`❌ <b>ตอบผิด! (ไม่มีฝ่ายใดได้คะแนน)</b>`);
             sendResult('wrong', resultMsg);
         }
     }
@@ -687,54 +682,65 @@
         stopTimer();
         isAnswerSubmitted = true;
         displayResult(statusType, text);
-        broadcast({ type: 'SHOW_RESULT', statusType: statusType, text: text });
-
-        if (statusType === 'correct') {
-            confetti({
-                particleCount: 100,
-                spread: 70,
-                origin: { y: 0.6 }
-            });
-        } else {
-            showBigRedCross();
-        }
+        broadcast({ type: 'SHOW_RESULT', statusType, text });
     }
 
     function displayResult(statusType, text) {
-        const feedback = document.getElementById('feedback');
-        feedback.className = `feedback ${statusType}`;
-        feedback.innerHTML = text;
-        feedback.style.display = 'block';
+        const fb = document.getElementById('feedback');
+        fb.className = `feedback ${statusType}`;
+        fb.innerHTML = text;
+        fb.style.display = 'block';
+
+        if (statusType === 'correct') {
+            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        } else if (statusType === 'wrong') {
+            showBigRedCross();
+        }
     }
 
     function showBigRedCross() {
         const cross = document.createElement('div');
         cross.className = 'big-red-cross';
-        cross.innerText = '✕';
+        cross.innerText = '❌';
         document.body.appendChild(cross);
         setTimeout(() => cross.remove(), 1600);
     }
 
     function nextQuestion() {
         if (myRole !== currentCreator) return;
-        
-        currentCreator = (currentCreator === 'P1') ? 'P2' : 'P1';
+        const nextCreator = (currentCreator === 'P1') ? 'P2' : 'P1';
+        currentCreator = nextCreator;
         resetSlotsAndFeedback();
-        
-        broadcast({ type: 'SWITCH_ROLES', nextCreator: currentCreator });
         updateRoleUI();
+        broadcast({ type: 'SWITCH_ROLES', nextCreator });
     }
 
     function resetSlotsAndFeedback() {
-        currentSlotData = { stmt1: null, op: null, stmt2: null, text1: '', textOp: '', text2: '' };
+        stopTimer();
         isAnswerSubmitted = false;
         selectedChoice = null;
-        updateSlotUI();
+        selectedElement = null;
+        currentSlotData = { stmt1: null, op: null, stmt2: null, text1: '', textOp: '', text2: '' };
 
-        document.getElementById('feedback').style.display = 'none';
+        updateSlotUI();
         document.querySelectorAll('.choice-btn').forEach(btn => btn.classList.remove('selected'));
-        stopTimer();
+        document.querySelectorAll('.drag-item').forEach(el => el.classList.remove('selected-item'));
+        
+        const fb = document.getElementById('feedback');
+        fb.style.display = 'none';
+        fb.innerHTML = '';
         document.getElementById('timer').innerText = TIME_PER_QUESTION;
+    }
+
+    function resetAllBoard() {
+        if (myRole !== 'P1') return;
+        if (!confirm('คุณต้องการรีเซ็ตคะแนนและกระดานทั้งหมดใช่หรือไม่?')) return;
+        
+        scores = { p1: 0, p2: 0 };
+        currentCreator = 'P1';
+        resetFullBoard();
+        updateRoleUI();
+        broadcast({ type: 'RESET_ALL_BOARD' });
     }
 
     function resetFullBoard() {
@@ -743,46 +749,25 @@
         resetSlotsAndFeedback();
     }
 
-    function resetAllBoard() {
-        if (myRole !== 'P1') return;
-        if (!confirm('ต้องการรีเซ็ตคะแนนและกระดานทั้งหมดใช่หรือไม่?')) return;
-        
-        currentCreator = 'P1';
-        resetFullBoard();
-        updateRoleUI();
-        broadcast({ type: 'RESET_ALL_BOARD' });
-    }
-
     function saveToGoogleSheet() {
         if (myRole !== 'P1') return;
         
         const data = {
-            team1: teamNames.p1,
-            score1: scores.p1,
-            team2: teamNames.p2,
-            score2: scores.p2,
-            timestamp: new Date().toISOString()
+            p1Name: teamNames.p1,
+            p1Score: scores.p1,
+            p2Name: teamNames.p2,
+            p2Score: scores.p2,
+            timestamp: new Date().toLocaleString('th-TH')
         };
-
-        const btn = document.getElementById('btn-save-sheet');
-        btn.innerText = '⏳ กำลังบันทึก...';
-        btn.disabled = true;
 
         fetch(scriptUrl, {
             method: 'POST',
             mode: 'no-cors',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
-        }).then(() => {
-            alert('บันทึกข้อมูลคะแนนลง Google Sheet สำเร็จ!');
-            btn.innerText = '📊 บันทึกคะแนนลง Google Sheet';
-            btn.disabled = false;
-        }).catch(err => {
-            console.error(err);
-            alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
-            btn.innerText = '📊 บันทึกคะแนนลง Google Sheet';
-            btn.disabled = false;
-        });
+        })
+        .then(() => alert('บันทึกคะแนนลง Google Sheet เรียบร้อยแล้ว!'))
+        .catch(err => alert('เกิดข้อผิดพลาดในการบันทึก: ' + err));
     }
 </script>
 </body>
