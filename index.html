@@ -158,7 +158,7 @@
     </div>
 
     <div class="game-layout">
-        <!-- 1. คลังโจทย์ (ซ่อนในโหมดผู้ชม) -->
+        <!-- 1. คลังโจทย์ -->
         <div class="panel disabled-panel" id="panel-bank">
             <div class="panel-title">1. เลือก/เพิ่มประโยค & ตัวเชื่อม</div>
             
@@ -195,7 +195,7 @@
             <div class="drag-item op" onclick="handleItemClick(this)" data-type="op" data-symbol="↔">ก็ต่อเมื่อ (↔)</div>
         </div>
 
-        <!-- 2. แท่นตั้งโจทย์สด (ย้ายมาอยู่ฝั่งซ้ายในโหมดผู้ชม) -->
+        <!-- 2. แท่นตั้งโจทย์สด -->
         <div class="panel" id="panel-assembly">
             <div class="panel-title" id="assembly-title-ui">2. แท่นตั้งโจทย์สด</div>
             <div class="assembly-box">
@@ -210,7 +210,7 @@
             </div>
         </div>
 
-        <!-- 3. ส่วนเลือกคำตอบ (ย้ายมาอยู่ฝั่งขวาในโหมดผู้ชม) -->
+        <!-- 3. ส่วนเลือกคำตอบ -->
         <div class="panel disabled-panel" id="panel-answer">
             <div class="panel-title" id="answer-title-ui">3. เลือกคำตอบ</div>
             <div class="choice-btn-group">
@@ -667,10 +667,13 @@
             scores[respondent.toLowerCase()] += 2;
             updateScoreUI();
             broadcast({ type: 'UPDATE_SCORE', scores: scores });
-            resultMsg = generateExplanation(`🎉 <b>ถูกต้อง! (${teamNames[respondent.toLowerCase()]} ได้รับ +2 คะแนน)</b>`);
+            resultMsg = generateExplanation(`🎉 <b>ถูกต้อง! ${teamNames[respondent.toLowerCase()]} ได้รับ +2 คะแนน</b>`);
             sendResult('correct', resultMsg);
         } else {
-            resultMsg = generateExplanation(`❌ <b>ตอบผิด! (${teamNames[respondent.toLowerCase()]} ไม่ได้รับคะแนน)</b>`);
+            scores[currentCreator.toLowerCase()] += 1;
+            updateScoreUI();
+            broadcast({ type: 'UPDATE_SCORE', scores: scores });
+            resultMsg = generateExplanation(`❌ <b>ตอบผิด! ${teamNames[currentCreator.toLowerCase()]} (ผู้สร้างโจทย์) ได้รับ +1 คะแนน</b>`);
             sendResult('wrong', resultMsg);
         }
     }
@@ -679,16 +682,20 @@
         stopTimer();
         isAnswerSubmitted = true;
         displayResult(statusType, text);
-        broadcast({ type: 'SHOW_RESULT', statusType: statusType, text: text });
+        broadcast({ type: 'SHOW_RESULT', statusType, text });
     }
 
     function displayResult(statusType, text) {
         const fb = document.getElementById('feedback');
-        fb.className = 'feedback ' + statusType;
+        fb.className = `feedback ${statusType}`;
         fb.innerHTML = text;
 
         if (statusType === 'correct') {
-            confetti({ particleCount: 80, spread: 60, origin: { y: 0.7 } });
+            confetti({
+                particleCount: 100,
+                spread: 70,
+                origin: { y: 0.6 }
+            });
         } else if (statusType === 'wrong') {
             showBigRedCross();
         }
@@ -697,7 +704,7 @@
     function showBigRedCross() {
         const cross = document.createElement('div');
         cross.className = 'big-red-cross';
-        cross.innerText = '✖';
+        cross.innerText = '❌';
         document.body.appendChild(cross);
         setTimeout(() => cross.remove(), 1600);
     }
@@ -706,10 +713,11 @@
         if (myRole !== currentCreator) return;
         const nextCreator = (currentCreator === 'P1') ? 'P2' : 'P1';
         currentCreator = nextCreator;
-
+        
         resetSlotsAndFeedback();
         updateRoleUI();
-        broadcast({ type: 'SWITCH_ROLES', nextCreator: nextCreator });
+        
+        broadcast({ type: 'SWITCH_ROLES', nextCreator });
     }
 
     function resetSlotsAndFeedback() {
@@ -719,44 +727,44 @@
         selectedElement = null;
         currentSlotData = { stmt1: null, op: null, stmt2: null, text1: '', textOp: '', text2: '' };
 
-        updateSlotUI();
         document.querySelectorAll('.choice-btn').forEach(btn => btn.classList.remove('selected'));
-        document.querySelectorAll('.drag-item').forEach(btn => btn.classList.remove('selected-item'));
-
+        document.querySelectorAll('.drag-item').forEach(el => el.classList.remove('selected-item'));
+        
         const fb = document.getElementById('feedback');
         fb.className = 'feedback';
         fb.style.display = 'none';
         fb.innerHTML = '';
+
         document.getElementById('timer').innerText = TIME_PER_QUESTION;
+
+        updateSlotUI();
+    }
+
+    function resetFullBoard() {
+        resetSlotsAndFeedback();
+        scores = { p1: 0, p2: 0 };
+        updateScoreUI();
     }
 
     function resetAllBoard() {
         if (myRole !== 'P1') return;
-        if (!confirm('คุณต้องการรีเซ็ตคะแนนและเริ่มต้นใหม่ทั้งหมดใช่หรือไม่?')) return;
-
-        currentCreator = 'P1';
-        resetFullBoard();
-        updateRoleUI();
-        broadcast({ type: 'RESET_ALL_BOARD' });
-    }
-
-    function resetFullBoard() {
-        scores = { p1: 0, p2: 0 };
-        updateScoreUI();
-        resetSlotsAndFeedback();
+        if (confirm('คุณต้องการรีเซ็ตคะแนนและเริ่มเกมใหม่ทั้งหมดใช่หรือไม่?')) {
+            currentCreator = 'P1';
+            resetFullBoard();
+            updateRoleUI();
+            broadcast({ type: 'RESET_ALL_BOARD' });
+        }
     }
 
     function saveToGoogleSheet() {
         if (myRole !== 'P1') return;
-        const submitBtn = document.getElementById('btn-save-sheet');
-        submitBtn.innerText = '⏳ กำลังบันทึกคะแนน...';
-        submitBtn.disabled = true;
 
         const payload = {
-            team1: teamNames.p1,
-            score1: scores.p1,
-            team2: teamNames.p2,
-            score2: scores.p2
+            teamP1: teamNames.p1,
+            scoreP1: scores.p1,
+            teamP2: teamNames.p2,
+            scoreP2: scores.p2,
+            timestamp: new Date().toLocaleString('th-TH')
         };
 
         fetch(scriptUrl, {
@@ -764,16 +772,11 @@
             mode: 'no-cors',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        })
-        .then(() => {
-            alert('✅ บันทึกคะแนนลง Google Sheet เรียบร้อยแล้ว!');
-        })
-        .catch(err => {
-            alert('❌ เกิดข้อผิดพลาดในการบันทึก: ' + err);
-        })
-        .finally(() => {
-            submitBtn.innerText = '📊 บันทึกคะแนนลง Google Sheet';
-            submitBtn.disabled = false;
+        }).then(() => {
+            alert('ส่งข้อมูลบันทึกคะแนนเรียบร้อยแล้ว!');
+        }).catch(err => {
+            console.error(err);
+            alert('เกิดข้อผิดพลาดในการบันทึกคะแนน');
         });
     }
 </script>
