@@ -230,8 +230,8 @@
     let myRole = ''; 
     let currentCreator = 'P1'; 
     
-    // อย่าลืมใส่ Web App URL ของคุณที่นี่
-    const scriptUrl = 'https://script.google.com/macros/s/AKfycbwnHnY0gC_-PNfQY7zijqxddZx8yMvezAUmUMBnwu8rqLuBj3t99kUHM3msaxDuc8ivIA/exec';
+    // ลิงก์ Apps Script ล่าสุดของคุณ
+    const scriptUrl = 'https://script.google.com/macros/s/AKfycbwbbi8KhEtjgBcBoJ9n_TK3_XSyJwwS09mbIr2z1q8fJJDnqDsE7lPNdgk98meU9O-SWQ/exec';
     const TIME_PER_QUESTION = 7; 
     
     let timeLeft = TIME_PER_QUESTION;
@@ -671,7 +671,6 @@
             resultMsg = generateExplanation(`🎉 <b>ถูกต้อง! ${teamNames[respondent.toLowerCase()]} ได้รับ +2 คะแนน</b>`);
             sendResult('correct', resultMsg);
         } else {
-            // ปรับแก้: ตอบผิด ผู้สร้างโจทย์จะไม่ได้คะแนนอีกต่อไป
             resultMsg = generateExplanation(`❌ <b>ตอบผิด! (ไม่มีฝ่ายใดได้คะแนน)</b>`);
             sendResult('wrong', resultMsg);
         }
@@ -755,20 +754,23 @@
         }
     }
 
+    // ฟังก์ชันส่งบันทึกคะแนนลง Google Sheet (ปรับเปลี่ยนรูปแบบการส่งเป็น URLSearchParams แน่นอน 100%)
     function saveToGoogleSheet() {
         if (myRole !== 'P1') return;
 
-        const formData = new FormData();
-        formData.append('timestamp', new Date().toLocaleString('th-TH'));
-        formData.append('teamP1', teamNames.p1);
-        formData.append('scoreP1', scores.p1);
-        formData.append('teamP2', teamNames.p2);
-        formData.append('scoreP2', scores.p2);
+        const params = new URLSearchParams();
+        params.append('teamP1', teamNames.p1);
+        params.append('scoreP1', scores.p1);
+        params.append('teamP2', teamNames.p2);
+        params.append('scoreP2', scores.p2);
 
         fetch(scriptUrl, {
             method: 'POST',
             mode: 'no-cors',
-            body: formData
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: params
         }).then(() => {
             alert('ส่งข้อมูลบันทึกคะแนนเรียบร้อยแล้ว!');
         }).catch(err => {
